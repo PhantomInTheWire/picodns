@@ -3,9 +3,9 @@ package dns
 import "encoding/binary"
 
 const (
-	TypeA    = 1
-	TypeAAAA = 28
-	ClassIN  = 1
+	TypeA    uint16 = 1
+	TypeAAAA uint16 = 28
+	ClassIN  uint16 = 1
 )
 
 const maxMessageSize = 4096
