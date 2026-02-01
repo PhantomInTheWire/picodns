@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"picodns/internal/cache"
 	"picodns/internal/config"
 	"picodns/internal/logging"
 	"picodns/internal/resolver"
@@ -25,7 +26,9 @@ func main() {
 	defer cancel()
 
 	upstream := resolver.NewUpstream(cfg.Upstreams)
-	resolverHandler := server.NewDNSHandler(upstream)
+	cacheStore := cache.New(cfg.CacheSize, nil)
+	res := resolver.NewCached(cacheStore, upstream)
+	resolverHandler := server.NewDNSHandler(res)
 
 	srv := server.New(cfg, logger, resolverHandler)
 	if err := srv.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
