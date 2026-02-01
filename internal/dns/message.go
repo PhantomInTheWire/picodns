@@ -9,6 +9,7 @@ var (
 	ErrShortBuffer  = errors.New("dns: short buffer")
 	ErrNameTooLong  = errors.New("dns: name too long")
 	ErrLabelTooLong = errors.New("dns: label too long")
+	ErrNoQuestion   = errors.New("dns: no question")
 )
 
 type Header struct {
