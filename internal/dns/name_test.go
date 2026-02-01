@@ -17,6 +17,21 @@ func TestEncodeDecodeName(t *testing.T) {
 	require.Equal(t, "google.com", name)
 }
 
+func TestEncodeNameExactBuffer(t *testing.T) {
+	// Test that a name exactly filling the buffer works
+	// "x.y" needs: 1 (length) + 1 (x) + 1 (length) + 1 (y) + 1 (null) = 5 bytes
+	buf := make([]byte, 5)
+	next, err := EncodeName(buf, 0, "x.y")
+	require.NoError(t, err)
+	require.Equal(t, 5, next)
+
+	// Verify it can be decoded
+	name, end, err := DecodeName(buf, 0)
+	require.NoError(t, err)
+	require.Equal(t, next, end)
+	require.Equal(t, "x.y", name)
+}
+
 func TestDecodeNameCompressionPointer(t *testing.T) {
 	buf := []byte{
 		3, 'w', 'w', 'w',

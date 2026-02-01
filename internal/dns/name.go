@@ -105,7 +105,7 @@ func EncodeName(buf []byte, off int, name string) (int, error) {
 		if len(label) > maxLabelLen {
 			return 0, ErrLabelTooLong
 		}
-		if i+1+len(label) >= len(buf) {
+		if i+1+len(label) > len(buf) {
 			return 0, ErrShortBuffer
 		}
 		buf[i] = byte(len(label))
