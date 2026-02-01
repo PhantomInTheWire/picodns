@@ -10,6 +10,7 @@ import (
 
 	"picodns/internal/config"
 	"picodns/internal/logging"
+	"picodns/internal/resolver"
 	"picodns/internal/server"
 )
 
@@ -23,7 +24,10 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	srv := server.New(cfg, logger, server.NoopHandler{})
+	upstream := resolver.NewUpstream(cfg.Upstreams)
+	resolverHandler := server.NewDNSHandler(upstream)
+
+	srv := server.New(cfg, logger, resolverHandler)
 	if err := srv.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Error("server exited", "error", err)
 		os.Exit(1)
