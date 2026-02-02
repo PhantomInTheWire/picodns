@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"strings"
 	"time"
@@ -74,11 +75,52 @@ func extractTTL(resp []byte, q dns.Question) (time.Duration, bool) {
 	if err != nil {
 		return 0, false
 	}
-	if header.ANCount == 0 || header.QDCount == 0 {
-		return 0, false
-	}
+
 	_, off, err := dns.ReadQuestion(resp, dns.HeaderLen)
 	if err != nil {
+		return 0, false
+	}
+
+	// Handle NXDOMAIN negative caching
+	if (header.Flags & 0x000F) == dns.RcodeNXDomain {
+		// Skip answers (if any)
+		for i := 0; i < int(header.ANCount); i++ {
+			_, next, err := dns.ReadResourceRecord(resp, off)
+			if err != nil {
+				return 0, false
+			}
+			off = next
+		}
+		// Look in authority section for SOA
+		for i := 0; i < int(header.NSCount); i++ {
+			rr, next, err := dns.ReadResourceRecord(resp, off)
+			if err != nil {
+				return 0, false
+			}
+			off = next
+			if rr.Type == dns.TypeSOA {
+				// Parse SOA minimum TTL
+				// SOA RDATA: MNAME, RNAME, SERIAL, REFRESH, RETRY, EXPIRE, MINIMUM
+				_, nextM, err := dns.DecodeName(rr.Data, 0)
+				if err != nil {
+					continue
+				}
+				_, nextR, err := dns.DecodeName(rr.Data, nextM)
+				if err != nil {
+					continue
+				}
+				if len(rr.Data) < nextR+20 {
+					continue
+				}
+				// MINIMUM is the last uint32 (20 bytes after MNAME and RNAME)
+				minTTL := binary.BigEndian.Uint32(rr.Data[nextR+16 : nextR+20])
+				return time.Duration(minTTL) * time.Second, true
+			}
+		}
+		return 0, false
+	}
+
+	if header.ANCount == 0 {
 		return 0, false
 	}
 

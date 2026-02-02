@@ -4,6 +4,7 @@ import "encoding/binary"
 
 const (
 	TypeA    uint16 = 1
+	TypeSOA  uint16 = 6
 	TypeAAAA uint16 = 28
 	ClassIN  uint16 = 1
 )
