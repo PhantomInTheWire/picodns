@@ -14,25 +14,29 @@ const (
 var ErrBadPointer = errors.New("dns: bad compression pointer")
 
 func DecodeName(buf []byte, off int) (string, int, error) {
-	name, next, err := decodeName(buf, off, 0, nil)
+	labels, next, err := decodeName(buf, off, 0, nil)
 	if err != nil {
 		return "", 0, err
+	}
+	name := strings.Join(labels, ".")
+	if len(name) > maxNameLen {
+		return "", 0, ErrNameTooLong
 	}
 	return name, next, nil
 }
 
-func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) (string, int, error) {
+func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) ([]string, int, error) {
 	if depth > maxDepth {
-		return "", 0, ErrBadPointer
+		return nil, 0, ErrBadPointer
 	}
 	if off >= len(buf) {
-		return "", 0, ErrShortBuffer
+		return nil, 0, ErrShortBuffer
 	}
 	if visited == nil {
 		visited = map[int]struct{}{}
 	}
 	if _, ok := visited[off]; ok {
-		return "", 0, ErrBadPointer
+		return nil, 0, ErrBadPointer
 	}
 	visited[off] = struct{}{}
 
@@ -40,7 +44,7 @@ func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) (strin
 	i := off
 	for {
 		if i >= len(buf) {
-			return "", 0, ErrShortBuffer
+			return nil, 0, ErrShortBuffer
 		}
 		length := int(buf[i])
 		if length == 0 {
@@ -50,36 +54,30 @@ func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) (strin
 
 		if length&0xC0 == 0xC0 {
 			if i+1 >= len(buf) {
-				return "", 0, ErrShortBuffer
+				return nil, 0, ErrShortBuffer
 			}
 			ptr := int(length&0x3F)<<8 | int(buf[i+1])
-			pointed, _, err := decodeName(buf, ptr, depth+1, visited)
+			pointedLabels, _, err := decodeName(buf, ptr, depth+1, visited)
 			if err != nil {
-				return "", 0, err
+				return nil, 0, err
 			}
-			if pointed != "" {
-				labels = append(labels, pointed)
-			}
+			labels = append(labels, pointedLabels...)
 			i += 2
 			break
 		}
 
 		if length > maxLabelLen {
-			return "", 0, ErrLabelTooLong
+			return nil, 0, ErrLabelTooLong
 		}
 		if i+1+length > len(buf) {
-			return "", 0, ErrShortBuffer
+			return nil, 0, ErrShortBuffer
 		}
 
 		labels = append(labels, string(buf[i+1:i+1+length]))
 		i += 1 + length
 	}
 
-	name := strings.Join(labels, ".")
-	if len(name) > maxNameLen {
-		return "", 0, ErrNameTooLong
-	}
-	return name, i, nil
+	return labels, i, nil
 }
 
 func EncodeName(buf []byte, off int, name string) (int, error) {
