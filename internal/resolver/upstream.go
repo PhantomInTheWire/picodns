@@ -2,9 +2,13 @@ package resolver
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"io"
 	"net"
 	"time"
+
+	"picodns/internal/dns"
 )
 
 var ErrNoUpstreams = errors.New("resolver: no upstreams configured")
@@ -68,5 +72,54 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 	if err != nil {
 		return nil, err
 	}
-	return buf[:n], nil
+	resp := buf[:n]
+
+	header, err := dns.ReadHeader(resp)
+	if err == nil && (header.Flags&dns.FlagTC) != 0 {
+		return u.queryTCP(ctx, upstream, req)
+	}
+
+	return resp, nil
+}
+
+func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([]byte, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", upstream)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		timeout := u.timeout
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		deadline = time.Now().Add(timeout)
+	}
+	_ = conn.SetDeadline(deadline)
+
+	reqLen := uint16(len(req))
+	lenBuf := make([]byte, 2)
+	binary.BigEndian.PutUint16(lenBuf, reqLen)
+
+	if _, err := conn.Write(lenBuf); err != nil {
+		return nil, err
+	}
+	if _, err := conn.Write(req); err != nil {
+		return nil, err
+	}
+
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return nil, err
+	}
+	respLen := binary.BigEndian.Uint16(lenBuf)
+
+	resp := make([]byte, respLen)
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }

@@ -16,6 +16,18 @@ var (
 	ErrQDMismatch   = errors.New("dns: question section mismatch")
 )
 
+const (
+	FlagQR = 0x8000
+	FlagTC = 0x0200
+	FlagRD = 0x0100
+	FlagRA = 0x0080
+
+	RcodeSuccess  = 0
+	RcodeFormat   = 1
+	RcodeServer   = 2
+	RcodeNXDomain = 3
+)
+
 type Header struct {
 	ID      uint16
 	Flags   uint16
