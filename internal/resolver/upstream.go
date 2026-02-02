@@ -11,10 +11,14 @@ var ErrNoUpstreams = errors.New("resolver: no upstreams configured")
 
 type Upstream struct {
 	upstreams []string
+	timeout   time.Duration
 }
 
-func NewUpstream(upstreams []string) *Upstream {
-	return &Upstream{upstreams: append([]string(nil), upstreams...)}
+func NewUpstream(upstreams []string, timeout time.Duration) *Upstream {
+	return &Upstream{
+		upstreams: append([]string(nil), upstreams...),
+		timeout:   timeout,
+	}
 }
 
 func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
@@ -47,7 +51,11 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		deadline = time.Now().Add(5 * time.Second)
+		timeout := u.timeout
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		deadline = time.Now().Add(timeout)
 	}
 	_ = conn.SetDeadline(deadline)
 

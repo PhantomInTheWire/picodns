@@ -86,10 +86,10 @@ func EncodeName(buf []byte, off int, name string) (int, error) {
 	if name == "." {
 		name = ""
 	}
-	name = strings.TrimSuffix(name, ".")
 	if len(name) > maxNameLen {
 		return 0, ErrNameTooLong
 	}
+	name = strings.TrimSuffix(name, ".")
 
 	if name == "" {
 		if off >= len(buf) {

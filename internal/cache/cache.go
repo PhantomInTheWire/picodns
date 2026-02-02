@@ -11,8 +11,8 @@ type Clock func() time.Time
 
 type Key struct {
 	Name  string
-	Type  uint16
-	Class uint16
+	Type  uint16 // DNS record type (e.g., A, AAAA, CNAME)
+	Class uint16 // DNS query class (e.g., IN for Internet)
 }
 
 type Cache struct {
@@ -68,12 +68,12 @@ func (c *Cache) Get(key Key) ([]byte, bool) {
 	return value, true
 }
 
-func (c *Cache) Set(key Key, value []byte, ttl time.Duration) {
+func (c *Cache) Set(key Key, value []byte, ttl time.Duration) bool {
 	if c == nil || c.max <= 0 {
-		return
+		return false
 	}
 	if ttl <= 0 {
-		return
+		return false
 	}
 	key = normalizeKey(key)
 
@@ -85,7 +85,7 @@ func (c *Cache) Set(key Key, value []byte, ttl time.Duration) {
 		item.value = cloneBytes(value)
 		item.expires = c.clock().Add(ttl)
 		c.lru.MoveToFront(elem)
-		return
+		return true
 	}
 
 	item := &entry{
@@ -103,6 +103,7 @@ func (c *Cache) Set(key Key, value []byte, ttl time.Duration) {
 		}
 		c.removeElement(back)
 	}
+	return true
 }
 
 func (c *Cache) removeElement(elem *list.Element) {

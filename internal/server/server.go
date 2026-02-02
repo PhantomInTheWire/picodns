@@ -6,14 +6,16 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"picodns/internal/config"
 )
 
 type Server struct {
-	cfg     config.Config
-	logger  *slog.Logger
-	handler Handler
+	cfg            config.Config
+	logger         *slog.Logger
+	handler        Handler
+	droppedPackets atomic.Uint64
 }
 
 const maxPacketSize = 4096
@@ -80,7 +82,8 @@ func (s *Server) Start(ctx context.Context) error {
 		select {
 		case packetCh <- packet{data: data, addr: addr}:
 		default:
-			s.logger.Warn("dropping packet", "reason", "queue full")
+			s.droppedPackets.Add(1)
+			s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.droppedPackets.Load())
 		}
 	}
 }

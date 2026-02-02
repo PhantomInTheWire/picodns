@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -20,7 +21,7 @@ func NewCached(cacheStore *cache.Cache, upstream Resolver) *Cached {
 
 func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 	if c == nil || c.upstream == nil {
-		return nil, nil
+		return nil, errors.New("resolver not configured")
 	}
 	q, err := extractQuestion(req)
 	if err != nil {

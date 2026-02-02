@@ -94,7 +94,7 @@ func startServer(t *testing.T, upstream string) (string, func()) {
 
 	cfg.ListenAddr = addr
 
-	up := resolver.NewUpstream(cfg.Upstreams)
+	up := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
 	store := cache.New(cfg.CacheSize, nil)
 	res := resolver.NewCached(store, up)
 	handler := server.NewDNSHandler(res)

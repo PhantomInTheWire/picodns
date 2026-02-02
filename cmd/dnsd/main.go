@@ -25,7 +25,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	upstream := resolver.NewUpstream(cfg.Upstreams)
+	upstream := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
 	cacheStore := cache.New(cfg.CacheSize, nil)
 	res := resolver.NewCached(cacheStore, upstream)
 	resolverHandler := server.NewDNSHandler(res)

@@ -1,4 +1,4 @@
-.PHONY: test test-e2e fmt
+.PHONY: test test-e2e fmt build
 
 test:
 	go test ./...
@@ -8,3 +8,7 @@ test-e2e:
 
 fmt:
 	gofmt -w ./cmd ./internal ./tests
+
+build:
+	mkdir -p bin
+	go build -o bin/dnsd ./cmd/dnsd
