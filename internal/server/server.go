@@ -34,72 +34,97 @@ func New(cfg config.Config, logger *slog.Logger, handler Handler) *Server {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	conn, err := net.ListenPacket("udp", s.cfg.ListenAddr)
-	if err != nil {
-		return err
+	if len(s.cfg.ListenAddrs) == 0 {
+		return errors.New("no listen addresses configured")
 	}
-	defer conn.Close()
-
-	s.logger.Info("dns server listening", "listen", s.cfg.ListenAddr)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go func() {
-		<-ctx.Done()
-		_ = conn.Close()
-	}()
-
 	packetCh := make(chan packet, s.cfg.QueueSize)
 	var wg sync.WaitGroup
+
 	for i := 0; i < s.cfg.Workers; i++ {
 		wg.Add(1)
-		go s.runWorker(ctx, conn, packetCh, &wg)
+		go s.runWorker(ctx, packetCh, &wg)
 	}
 
 	pool := sync.Pool{New: func() any {
 		return make([]byte, maxPacketSize)
 	}}
 
-	for {
-		buf := pool.Get().([]byte)
-		n, addr, readErr := conn.ReadFrom(buf)
-		if readErr != nil {
-			pool.Put(buf)
-			if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
-				s.logger.Info("shutting down")
-				close(packetCh)
-				wg.Wait()
-				s.logger.Info("server shutdown complete", "dropped_packets", s.droppedPackets.Load())
-				if ctx.Err() != nil {
-					return ctx.Err()
+	errCh := make(chan error, len(s.cfg.ListenAddrs))
+	for _, addr := range s.cfg.ListenAddrs {
+		conn, err := net.ListenPacket("udp", addr)
+		if err != nil {
+			return err
+		}
+		s.logger.Info("dns server listening", "listen", addr)
+
+		wg.Add(1)
+		go func(c net.PacketConn) {
+			defer wg.Done()
+			defer c.Close()
+
+			go func() {
+				<-ctx.Done()
+				_ = c.Close()
+			}()
+
+			for {
+				buf := pool.Get().([]byte)
+				n, addr, readErr := c.ReadFrom(buf)
+				if readErr != nil {
+					pool.Put(buf)
+					if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
+						return
+					}
+					s.logger.Error("read error", "error", readErr)
+					continue
 				}
-				return nil
+
+				data := make([]byte, n)
+				copy(data, buf[:n])
+				pool.Put(buf)
+
+				s.totalQueries.Add(1)
+				select {
+				case packetCh <- packet{data: data, addr: addr, conn: c}:
+				default:
+					s.droppedPackets.Add(1)
+					s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.droppedPackets.Load())
+				}
 			}
-			s.logger.Error("read error", "error", readErr)
-			continue
-		}
+		}(conn)
+	}
 
-		data := make([]byte, n)
-		copy(data, buf[:n])
-		pool.Put(buf)
-
-		s.totalQueries.Add(1)
-		select {
-		case packetCh <- packet{data: data, addr: addr}:
-		default:
-			s.droppedPackets.Add(1)
-			s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.droppedPackets.Load())
-		}
+	select {
+	case <-ctx.Done():
+		s.logger.Info("shutting down")
+		close(packetCh)
+		wg.Wait()
+		s.logger.Info("server shutdown complete",
+			"total_queries", s.totalQueries.Load(),
+			"dropped_packets", s.droppedPackets.Load(),
+			"handler_errors", s.handlerErrors.Load(),
+			"write_errors", s.writeErrors.Load())
+		return ctx.Err()
+	case err := <-errCh:
+		s.logger.Error("critical error, shutting down", "error", err)
+		cancel()
+		close(packetCh)
+		wg.Wait()
+		return err
 	}
 }
 
 type packet struct {
 	data []byte
 	addr net.Addr
+	conn net.PacketConn
 }
 
-func (s *Server) runWorker(ctx context.Context, conn net.PacketConn, packets <-chan packet, wg *sync.WaitGroup) {
+func (s *Server) runWorker(ctx context.Context, packets <-chan packet, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for pkt := range packets {
@@ -121,7 +146,7 @@ func (s *Server) runWorker(ctx context.Context, conn net.PacketConn, packets <-c
 		if len(resp) == 0 {
 			continue
 		}
-		if _, writeErr := conn.WriteTo(resp, pkt.addr); writeErr != nil {
+		if _, writeErr := pkt.conn.WriteTo(resp, pkt.addr); writeErr != nil {
 			s.writeErrors.Add(1)
 			s.logger.Error("write error", "error", writeErr)
 		}

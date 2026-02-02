@@ -7,24 +7,24 @@ import (
 )
 
 type Config struct {
-	ListenAddr string
-	Upstreams  []string
-	Workers    int
-	QueueSize  int
-	Timeout    time.Duration
-	CacheSize  int
-	LogLevel   string
+	ListenAddrs []string
+	Upstreams   []string
+	Workers     int
+	QueueSize   int
+	Timeout     time.Duration
+	CacheSize   int
+	LogLevel    string
 }
 
 func Default() Config {
 	return Config{
-		ListenAddr: ":53",
-		Upstreams:  []string{"1.1.1.1:53"},
-		Workers:    128,
-		QueueSize:  256,
-		Timeout:    5 * time.Second,
-		CacheSize:  10000,
-		LogLevel:   "info",
+		ListenAddrs: []string{":53"},
+		Upstreams:   []string{"1.1.1.1:53"},
+		Workers:     128,
+		QueueSize:   256,
+		Timeout:     5 * time.Second,
+		CacheSize:   10000,
+		LogLevel:    "info",
 	}
 }
 
@@ -34,7 +34,8 @@ func BindFlags(cfg *Config) {
 	}
 
 	var upstreams string
-	flag.StringVar(&cfg.ListenAddr, "listen", cfg.ListenAddr, "listen address")
+	var listen string
+	flag.StringVar(&listen, "listen", strings.Join(cfg.ListenAddrs, ","), "comma-separated listen addresses")
 	flag.StringVar(&upstreams, "upstreams", strings.Join(cfg.Upstreams, ","), "comma-separated upstreams")
 	flag.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker pool size")
 	flag.IntVar(&cfg.QueueSize, "queue-size", cfg.QueueSize, "worker pool queue size")
@@ -44,6 +45,9 @@ func BindFlags(cfg *Config) {
 
 	flag.Parse()
 
+	if listen != "" {
+		cfg.ListenAddrs = splitComma(listen)
+	}
 	if upstreams != "" {
 		cfg.Upstreams = splitComma(upstreams)
 	}
