@@ -157,7 +157,7 @@ func startServer(t *testing.T, upstream string) (string, func()) {
 	addr := listen.LocalAddr().String()
 	_ = listen.Close()
 
-	cfg.ListenAddr = addr
+	cfg.ListenAddrs = []string{addr}
 
 	up := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
 	store := cache.New(cfg.CacheSize, nil)

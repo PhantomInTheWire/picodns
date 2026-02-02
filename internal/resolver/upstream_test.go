@@ -35,5 +35,8 @@ func TestUpstreamResolve(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte{1, 2, 3}, resp)
 
+	require.Equal(t, uint64(1), r.queryCount.Load())
+	require.Greater(t, r.totalLatency.Load(), uint64(0))
+
 	<-done
 }

@@ -37,6 +37,9 @@ func TestCachedResolverStoresAndHits(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, resp, second)
 	require.Equal(t, 1, up.call)
+
+	require.Equal(t, uint64(1), res.hits.Load())
+	require.Equal(t, uint64(1), res.misses.Load())
 }
 
 func makeQuery(name string) []byte {
