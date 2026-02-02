@@ -51,3 +51,20 @@ func TestDecodeNameCompressionPointer(t *testing.T) {
 	require.Equal(t, "mail.example.com", name2)
 	require.Equal(t, len(buf), end)
 }
+
+func TestDecodeNameCycle(t *testing.T) {
+	// Pointer points to itself
+	buf := []byte{
+		0xC0, 0x00,
+	}
+	_, _, err := DecodeName(buf, 0)
+	require.ErrorIs(t, err, ErrBadPointer)
+
+	// Cycle: 0 -> 2 -> 0
+	buf2 := []byte{
+		0xC0, 0x02,
+		0xC0, 0x00,
+	}
+	_, _, err = DecodeName(buf2, 0)
+	require.ErrorIs(t, err, ErrBadPointer)
+}
