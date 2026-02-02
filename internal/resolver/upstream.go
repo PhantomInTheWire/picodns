@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"picodns/internal/dns"
@@ -14,8 +15,10 @@ import (
 var ErrNoUpstreams = errors.New("resolver: no upstreams configured")
 
 type Upstream struct {
-	upstreams []string
-	timeout   time.Duration
+	upstreams    []string
+	timeout      time.Duration
+	totalLatency atomic.Uint64 // nanoseconds
+	queryCount   atomic.Uint64
 }
 
 func NewUpstream(upstreams []string, timeout time.Duration) *Upstream {
@@ -32,8 +35,11 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 
 	var lastErr error
 	for _, upstream := range u.upstreams {
+		start := time.Now()
 		resp, err := u.query(ctx, upstream, req)
 		if err == nil {
+			u.totalLatency.Add(uint64(time.Since(start)))
+			u.queryCount.Add(1)
 			return resp, nil
 		}
 		lastErr = err

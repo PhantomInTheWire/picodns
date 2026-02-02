@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"picodns/internal/cache"
@@ -14,6 +15,8 @@ import (
 type Cached struct {
 	cache    *cache.Cache
 	upstream Resolver
+	hits     atomic.Uint64
+	misses   atomic.Uint64
 }
 
 func NewCached(cacheStore *cache.Cache, upstream Resolver) *Cached {
@@ -31,8 +34,10 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 	key := cache.Key{Name: q.Name, Type: q.Type, Class: q.Class}
 	if c.cache != nil {
 		if cached, ok := c.cache.Get(key); ok {
+			c.hits.Add(1)
 			return cached, nil
 		}
+		c.misses.Add(1)
 	}
 
 	resp, err := c.upstream.Resolve(ctx, req)
