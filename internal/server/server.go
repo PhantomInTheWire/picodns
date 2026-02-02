@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"sync"
@@ -60,10 +61,13 @@ func (s *Server) Start(ctx context.Context) error {
 		n, addr, readErr := conn.ReadFrom(buf)
 		if readErr != nil {
 			pool.Put(buf)
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
 				close(packetCh)
 				wg.Wait()
-				return ctx.Err()
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return nil
 			}
 			s.logger.Error("read error", "error", readErr)
 			continue
