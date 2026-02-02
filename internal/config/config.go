@@ -10,6 +10,7 @@ type Config struct {
 	ListenAddr string
 	Upstreams  []string
 	Workers    int
+	QueueSize  int
 	Timeout    time.Duration
 	CacheSize  int
 	LogLevel   string
@@ -20,6 +21,7 @@ func Default() Config {
 		ListenAddr: ":53",
 		Upstreams:  []string{"1.1.1.1:53"},
 		Workers:    128,
+		QueueSize:  256,
 		Timeout:    5 * time.Second,
 		CacheSize:  10000,
 		LogLevel:   "info",
@@ -35,6 +37,7 @@ func BindFlags(cfg *Config) {
 	flag.StringVar(&cfg.ListenAddr, "listen", cfg.ListenAddr, "listen address")
 	flag.StringVar(&upstreams, "upstreams", strings.Join(cfg.Upstreams, ","), "comma-separated upstreams")
 	flag.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker pool size")
+	flag.IntVar(&cfg.QueueSize, "queue-size", cfg.QueueSize, "worker pool queue size")
 	flag.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "upstream timeout")
 	flag.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "max cache entries")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level (debug, info, warn, error)")

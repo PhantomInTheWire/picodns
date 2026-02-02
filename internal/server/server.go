@@ -47,7 +47,7 @@ func (s *Server) Start(ctx context.Context) error {
 		_ = conn.Close()
 	}()
 
-	packetCh := make(chan packet, s.cfg.Workers*2)
+	packetCh := make(chan packet, s.cfg.QueueSize)
 	var wg sync.WaitGroup
 	for i := 0; i < s.cfg.Workers; i++ {
 		wg.Add(1)
