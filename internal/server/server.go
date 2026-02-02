@@ -15,7 +15,10 @@ type Server struct {
 	cfg            config.Config
 	logger         *slog.Logger
 	handler        Handler
+	totalQueries   atomic.Uint64
 	droppedPackets atomic.Uint64
+	handlerErrors  atomic.Uint64
+	writeErrors    atomic.Uint64
 }
 
 const maxPacketSize = 4096
@@ -81,6 +84,7 @@ func (s *Server) Start(ctx context.Context) error {
 		copy(data, buf[:n])
 		pool.Put(buf)
 
+		s.totalQueries.Add(1)
 		select {
 		case packetCh <- packet{data: data, addr: addr}:
 		default:
@@ -110,6 +114,7 @@ func (s *Server) runWorker(ctx context.Context, conn net.PacketConn, packets <-c
 			cancel()
 		}
 		if err != nil {
+			s.handlerErrors.Add(1)
 			s.logger.Error("handler error", "error", err)
 			continue
 		}
@@ -117,6 +122,7 @@ func (s *Server) runWorker(ctx context.Context, conn net.PacketConn, packets <-c
 			continue
 		}
 		if _, writeErr := conn.WriteTo(resp, pkt.addr); writeErr != nil {
+			s.writeErrors.Add(1)
 			s.logger.Error("write error", "error", writeErr)
 		}
 	}
