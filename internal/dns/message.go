@@ -3,6 +3,7 @@ package dns
 import (
 	"encoding/binary"
 	"errors"
+	"strings"
 )
 
 var (
@@ -10,6 +11,9 @@ var (
 	ErrNameTooLong  = errors.New("dns: name too long")
 	ErrLabelTooLong = errors.New("dns: label too long")
 	ErrNoQuestion   = errors.New("dns: no question")
+	ErrIDMismatch   = errors.New("dns: transaction ID mismatch")
+	ErrNotResponse  = errors.New("dns: not a response")
+	ErrQDMismatch   = errors.New("dns: question section mismatch")
 )
 
 type Header struct {
@@ -87,4 +91,51 @@ func WriteQuestion(buf []byte, off int, q Question) (int, error) {
 	binary.BigEndian.PutUint16(buf[next:next+2], q.Type)
 	binary.BigEndian.PutUint16(buf[next+2:next+4], q.Class)
 	return next + 4, nil
+}
+
+// ValidateResponse verifies that the response matches the request.
+func ValidateResponse(req, resp []byte) error {
+	reqHeader, err := ReadHeader(req)
+	if err != nil {
+		return err
+	}
+	respHeader, err := ReadHeader(resp)
+	if err != nil {
+		return err
+	}
+
+	if reqHeader.ID != respHeader.ID {
+		return ErrIDMismatch
+	}
+
+	// QR bit is the most significant bit of the flags
+	if respHeader.Flags&0x8000 == 0 {
+		return ErrNotResponse
+	}
+
+	if reqHeader.QDCount != respHeader.QDCount {
+		return ErrQDMismatch
+	}
+
+	offReq := HeaderLen
+	offResp := HeaderLen
+
+	for i := 0; i < int(reqHeader.QDCount); i++ {
+		qReq, nextReq, err := ReadQuestion(req, offReq)
+		if err != nil {
+			return err
+		}
+		qResp, nextResp, err := ReadQuestion(resp, offResp)
+		if err != nil {
+			return err
+		}
+
+		if !strings.EqualFold(qReq.Name, qResp.Name) || qReq.Type != qResp.Type || qReq.Class != qResp.Class {
+			return ErrQDMismatch
+		}
+		offReq = nextReq
+		offResp = nextResp
+	}
+
+	return nil
 }

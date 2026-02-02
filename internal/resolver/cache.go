@@ -39,6 +39,10 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	if err := dns.ValidateResponse(req, resp); err != nil {
+		return nil, err
+	}
+
 	if c.cache != nil {
 		ttl, ok := extractTTL(resp, q)
 		if ok {
