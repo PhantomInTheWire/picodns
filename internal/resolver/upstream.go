@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"time"
 )
 
 var ErrNoUpstreams = errors.New("resolver: no upstreams configured")
@@ -44,9 +45,11 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 	}
 	defer conn.Close()
 
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(deadline)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(5 * time.Second)
 	}
+	_ = conn.SetDeadline(deadline)
 
 	if _, err := conn.Write(req); err != nil {
 		return nil, err
