@@ -77,7 +77,7 @@ func extractTTL(resp []byte, q dns.Question) (time.Duration, bool) {
 		return 0, false
 	}
 
-	qName := strings.ToLower(strings.TrimSuffix(q.Name, "."))
+	qName := strings.TrimSuffix(q.Name, ".")
 	for i := 0; i < int(header.ANCount); i++ {
 		rr, next, err := dns.ReadResourceRecord(resp, off)
 		if err != nil {
@@ -87,12 +87,12 @@ func extractTTL(resp []byte, q dns.Question) (time.Duration, bool) {
 		if rr.Type != q.Type || rr.Class != q.Class {
 			continue
 		}
-		name := strings.ToLower(strings.TrimSuffix(rr.Name, "."))
-		if name != qName {
+		name := strings.TrimSuffix(rr.Name, ".")
+		if !strings.EqualFold(name, qName) {
 			continue
 		}
 		if rr.TTL == 0 {
-			return 0, false
+			continue
 		}
 		return time.Duration(rr.TTL) * time.Second, true
 	}
