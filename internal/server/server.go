@@ -64,8 +64,10 @@ func (s *Server) Start(ctx context.Context) error {
 		if readErr != nil {
 			pool.Put(buf)
 			if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
+				s.logger.Info("shutting down")
 				close(packetCh)
 				wg.Wait()
+				s.logger.Info("server shutdown complete", "dropped_packets", s.droppedPackets.Load())
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
