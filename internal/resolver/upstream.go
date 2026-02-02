@@ -12,7 +12,10 @@ import (
 	"picodns/internal/dns"
 )
 
-var ErrNoUpstreams = errors.New("resolver: no upstreams configured")
+var (
+	ErrNoUpstreams = errors.New("resolver: no upstreams configured")
+	maxTCPSize     = 65535
+)
 
 type Upstream struct {
 	upstreams    []string
@@ -120,7 +123,10 @@ func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
 		return nil, err
 	}
-	respLen := binary.BigEndian.Uint16(lenBuf)
+	respLen := int(binary.BigEndian.Uint16(lenBuf))
+	if respLen > maxTCPSize {
+		return nil, errors.New("resolver: tcp response too large")
+	}
 
 	resp := make([]byte, respLen)
 	if _, err := io.ReadFull(conn, resp); err != nil {
