@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/binary"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -33,6 +34,70 @@ func TestE2EForwardAndCache(t *testing.T) {
 	require.Equal(t, resp1, resp2)
 
 	require.Equal(t, int32(1), atomic.LoadInt32(hits))
+}
+
+func TestE2ENegativeCache(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer conn.Close()
+
+	var hits int32
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			_, addr, readErr := conn.ReadFrom(buf)
+			if readErr != nil {
+				return
+			}
+			atomic.AddInt32(&hits, 1)
+
+			// Build NXDOMAIN response with SOA in authority section
+			resp := make([]byte, 512)
+			h := dns.Header{
+				ID:      binary.BigEndian.Uint16(buf[0:2]),
+				Flags:   0x8183, // QR, RD, RA, NXDOMAIN
+				QDCount: 1,
+				NSCount: 1,
+			}
+			_ = dns.WriteHeader(resp, h)
+			q, _, _ := dns.ReadQuestion(buf, dns.HeaderLen)
+			next, _ := dns.WriteQuestion(resp, dns.HeaderLen, q)
+
+			// Add SOA
+			soaStart := next
+			next, _ = dns.EncodeName(resp, soaStart, "example.com")
+			binary.BigEndian.PutUint16(resp[next:next+2], dns.TypeSOA)
+			binary.BigEndian.PutUint16(resp[next+2:next+4], dns.ClassIN)
+			binary.BigEndian.PutUint32(resp[next+4:next+8], 60) // TTL
+
+			// SOA RDATA
+			rdataStart := next + 10
+			mnameEnd, _ := dns.EncodeName(resp, rdataStart, "ns1.example.com")
+			rnameEnd, _ := dns.EncodeName(resp, mnameEnd, "admin.example.com")
+			binary.BigEndian.PutUint32(resp[rnameEnd:rnameEnd+4], 2024020501) // Serial
+			binary.BigEndian.PutUint32(resp[rnameEnd+4:rnameEnd+8], 3600)     // Refresh
+			binary.BigEndian.PutUint32(resp[rnameEnd+8:rnameEnd+12], 600)     // Retry
+			binary.BigEndian.PutUint32(resp[rnameEnd+12:rnameEnd+16], 86400)  // Expire
+			binary.BigEndian.PutUint32(resp[rnameEnd+16:rnameEnd+20], 30)     // Minimum TTL = 30s
+
+			binary.BigEndian.PutUint16(resp[next+8:next+10], uint16(rnameEnd+20-rdataStart))
+			_, _ = conn.WriteTo(resp[:rnameEnd+20], addr)
+
+		}
+	}()
+
+	serverAddr, stopServer := startServer(t, conn.LocalAddr().String())
+	defer stopServer()
+
+	resp1 := sendQuery(t, serverAddr, "nonexistent.example.com")
+	require.NotEmpty(t, resp1)
+	header1, _ := dns.ReadHeader(resp1)
+	require.Equal(t, uint16(dns.RcodeNXDomain), header1.Flags&0x000F)
+
+	resp2 := sendQuery(t, serverAddr, "nonexistent.example.com")
+	require.Equal(t, resp1, resp2)
+
+	require.Equal(t, int32(1), atomic.LoadInt32(&hits))
 }
 
 func startUpstream(t *testing.T) (string, *int32, func()) {
