@@ -288,7 +288,10 @@ func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth i
 					if ans.Type == dns.TypeCNAME {
 						cnameTarget := extractCNAME(resp, ans)
 						if cnameTarget != "" {
-							newReq := buildQuery(msg.Header.ID, cnameTarget, q.Type, q.Class)
+							newReq, err := buildQuery(msg.Header.ID, cnameTarget, q.Type, q.Class)
+							if err != nil {
+								continue
+							}
 							return r.resolveIterative(ctx, newReq, depth+1)
 						}
 					}
@@ -503,7 +506,7 @@ func isSubdomain(child, parent string) bool {
 	return true
 }
 
-func buildQuery(id uint16, name string, qtype, qclass uint16) []byte {
+func buildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
 	buf := make([]byte, dns.MaxMessageSize)
 
 	header := dns.Header{
@@ -511,16 +514,21 @@ func buildQuery(id uint16, name string, qtype, qclass uint16) []byte {
 		Flags:   dns.FlagRD,
 		QDCount: 1,
 	}
-	dns.WriteHeader(buf, header)
+	if err := dns.WriteHeader(buf, header); err != nil {
+		return nil, err
+	}
 
 	off := dns.HeaderLen
-	off, _ = dns.EncodeName(buf, off, name)
+	off, err := dns.EncodeName(buf, off, name)
+	if err != nil {
+		return nil, err
+	}
 
 	binary.BigEndian.PutUint16(buf[off:off+2], qtype)
 	binary.BigEndian.PutUint16(buf[off+2:off+4], qclass)
 	off += 4
 
-	return buf[:off]
+	return buf[:off], nil
 }
 
 // startTestServer starts a picodns server with the given resolver

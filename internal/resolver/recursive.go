@@ -121,7 +121,10 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 						}
 						seenCnames[cnameTarget] = struct{}{}
 
-						newReq := buildQuery(origMsg.Header.ID, cnameTarget, q.Type, q.Class)
+						newReq, err := buildQuery(origMsg.Header.ID, cnameTarget, q.Type, q.Class)
+						if err != nil {
+							continue
+						}
 						return r.resolveIterative(ctx, newReq, cnameTarget, depth+1, seenCnames)
 					}
 				}
@@ -167,13 +170,15 @@ func (r *Recursive) queryServer(ctx context.Context, server string, req []byte) 
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	deadline := time.Now().Add(r.timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	conn.SetDeadline(deadline)
+	if err := conn.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
 
 	if _, err := conn.Write(req); err != nil {
 		return nil, err
@@ -209,13 +214,15 @@ func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byt
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	deadline := time.Now().Add(r.timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	conn.SetDeadline(deadline)
+	if err := conn.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
 
 	reqLen := uint16(len(req))
 	var lenBuf [2]byte
@@ -257,7 +264,10 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 
 	var ips []string
 	for _, nsName := range nsNames {
-		req := buildQuery(uint16(rand.Intn(65536)), nsName, dns.TypeA, dns.ClassIN)
+		req, err := buildQuery(uint16(rand.Intn(65536)), nsName, dns.TypeA, dns.ClassIN)
+		if err != nil {
+			continue
+		}
 		resp, err := r.resolveIterative(ctx, req, nsName, depth+1, seenCnames)
 		if err != nil {
 			continue
@@ -408,7 +418,7 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 	return nsNames, glueIPs
 }
 
-func buildQuery(id uint16, name string, qtype, qclass uint16) []byte {
+func buildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
 	buf := make([]byte, dns.MaxMessageSize)
 
 	header := dns.Header{
@@ -416,14 +426,19 @@ func buildQuery(id uint16, name string, qtype, qclass uint16) []byte {
 		Flags:   dns.FlagRD,
 		QDCount: 1,
 	}
-	dns.WriteHeader(buf, header)
+	if err := dns.WriteHeader(buf, header); err != nil {
+		return nil, err
+	}
 
 	off := dns.HeaderLen
-	off, _ = dns.EncodeName(buf, off, name)
+	off, err := dns.EncodeName(buf, off, name)
+	if err != nil {
+		return nil, err
+	}
 
 	binary.BigEndian.PutUint16(buf[off:off+2], qtype)
 	binary.BigEndian.PutUint16(buf[off+2:off+4], qclass)
 	off += 4
 
-	return buf[:off]
+	return buf[:off], nil
 }
