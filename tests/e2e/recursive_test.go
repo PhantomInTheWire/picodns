@@ -1097,7 +1097,7 @@ func TestE2ERecursiveMultipleDomains(t *testing.T) {
 
 	rec := resolver.NewRecursive(10 * time.Second)
 	serverAddr, stopServer := startServerWithResolver(t, rec)
-	defer stopServer()
+	t.Cleanup(stopServer)
 
 	domains := []string{
 		"example.com",
