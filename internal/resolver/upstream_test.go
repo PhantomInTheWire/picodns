@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"encoding/binary"
 	"net"
 	"testing"
 	"time"
@@ -39,4 +40,32 @@ func TestUpstreamResolve(t *testing.T) {
 	require.Greater(t, r.totalLatency.Load(), uint64(0))
 
 	<-done
+}
+
+func TestUpstreamTCPSizeLimit(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	// Temporarily reduce maxTCPSize for testing
+	oldMax := maxTCPSize
+	maxTCPSize = 10
+	defer func() { maxTCPSize = oldMax }()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Send length 20 (bigger than maxTCPSize=10)
+		_ = binary.Write(conn, binary.BigEndian, uint16(20))
+	}()
+
+	u := NewUpstream([]string{ln.Addr().String()}, time.Second)
+	// We call queryTCP directly since it's in the same package
+	_, err = u.queryTCP(context.Background(), ln.Addr().String(), []byte{1, 2, 3})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tcp response too large")
 }
