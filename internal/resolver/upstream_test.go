@@ -54,7 +54,7 @@ func TestUpstreamTCPSizeLimit(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		_ = binary.Write(conn, binary.BigEndian, uint16(20))
 	}()
