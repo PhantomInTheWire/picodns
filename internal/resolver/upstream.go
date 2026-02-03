@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"picodns/internal/dns"
@@ -19,13 +20,21 @@ var (
 type Upstream struct {
 	upstreams []string
 	timeout   time.Duration
+	pool      sync.Pool
 }
 
 func NewUpstream(upstreams []string, timeout time.Duration) *Upstream {
-	return &Upstream{
+	u := &Upstream{
 		upstreams: append([]string(nil), upstreams...),
 		timeout:   timeout,
 	}
+	u.pool = sync.Pool{
+		New: func() any {
+			b := make([]byte, 4096)
+			return &b
+		},
+	}
+	return u
 }
 
 func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
@@ -63,12 +72,16 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 		return nil, err
 	}
 
-	buf := make([]byte, 4096)
+	bufPtr := u.pool.Get().(*[]byte)
+	defer u.pool.Put(bufPtr)
+	buf := *bufPtr
+
 	n, err := conn.Read(buf)
 	if err != nil {
 		return nil, err
 	}
-	resp := buf[:n]
+	resp := make([]byte, n)
+	copy(resp, buf[:n])
 
 	header, err := dns.ReadHeader(resp)
 	if err == nil && (header.Flags&dns.FlagTC) != 0 {
@@ -90,20 +103,20 @@ func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([
 	_ = conn.SetDeadline(deadline)
 
 	reqLen := uint16(len(req))
-	lenBuf := make([]byte, 2)
-	binary.BigEndian.PutUint16(lenBuf, reqLen)
+	var lenBuf [2]byte
+	binary.BigEndian.PutUint16(lenBuf[:], reqLen)
 
-	if _, err := conn.Write(lenBuf); err != nil {
+	if _, err := conn.Write(lenBuf[:]); err != nil {
 		return nil, err
 	}
 	if _, err := conn.Write(req); err != nil {
 		return nil, err
 	}
 
-	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
 		return nil, err
 	}
-	respLen := int(binary.BigEndian.Uint16(lenBuf))
+	respLen := int(binary.BigEndian.Uint16(lenBuf[:]))
 	if respLen > maxTCPSize {
 		return nil, errors.New("resolver: tcp response too large")
 	}

@@ -63,9 +63,7 @@ func (c *Cache) Get(key dns.Question) ([]byte, bool) {
 	if c.lru != nil {
 		c.lru.MoveToFront(elem)
 	}
-	value := make([]byte, len(item.value))
-	copy(value, item.value)
-	return value, true
+	return item.value, true
 }
 
 func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
