@@ -34,7 +34,8 @@ func New(cfg config.Config, logger *slog.Logger, res resolver.Resolver) *Server 
 		resolver: res,
 		pool: sync.Pool{
 			New: func() any {
-				return make([]byte, dns.MaxMessageSize)
+				b := make([]byte, dns.MaxMessageSize)
+				return &b
 			},
 		},
 	}
@@ -69,10 +70,11 @@ func (s *Server) Start(ctx context.Context) error {
 			}()
 
 			for {
-				buf := s.pool.Get().([]byte)
+				bufPtr := s.pool.Get().(*[]byte)
+				buf := *bufPtr
 				n, addr, readErr := c.ReadFrom(buf)
 				if readErr != nil {
-					s.pool.Put(buf)
+					s.pool.Put(bufPtr)
 					if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
 						return
 					}
@@ -85,11 +87,11 @@ func (s *Server) Start(ctx context.Context) error {
 				select {
 				case sema <- struct{}{}:
 					wg.Add(1)
-					go func(data []byte, addr net.Addr, pc net.PacketConn) {
+					go func(dataPtr *[]byte, n int, addr net.Addr, pc net.PacketConn) {
 						defer wg.Done()
 						defer func() {
 							<-sema
-							s.pool.Put(data)
+							s.pool.Put(dataPtr)
 						}()
 
 						reqCtx := ctx
@@ -99,7 +101,7 @@ func (s *Server) Start(ctx context.Context) error {
 							defer cancel()
 						}
 
-						resp, err := s.resolver.Resolve(reqCtx, data[:n])
+						resp, err := s.resolver.Resolve(reqCtx, (*dataPtr)[:n])
 						if err != nil {
 							s.HandlerErrors.Add(1)
 							s.logger.Error("handler error", "error", err)
@@ -112,9 +114,9 @@ func (s *Server) Start(ctx context.Context) error {
 							s.WriteErrors.Add(1)
 							s.logger.Error("write error", "error", writeErr)
 						}
-					}(buf, addr, c)
+					}(bufPtr, n, addr, c)
 				default:
-					s.pool.Put(buf)
+					s.pool.Put(bufPtr)
 					s.DroppedPackets.Add(1)
 					s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.DroppedPackets.Load())
 				}
