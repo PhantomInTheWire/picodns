@@ -18,10 +18,10 @@ type Server struct {
 	logger         *slog.Logger
 	resolver       resolver.Resolver
 	pool           sync.Pool
-	totalQueries   atomic.Uint64
-	droppedPackets atomic.Uint64
-	handlerErrors  atomic.Uint64
-	writeErrors    atomic.Uint64
+	TotalQueries   atomic.Uint64
+	DroppedPackets atomic.Uint64
+	HandlerErrors  atomic.Uint64
+	WriteErrors    atomic.Uint64
 }
 
 func New(cfg config.Config, logger *slog.Logger, res resolver.Resolver) *Server {
@@ -34,8 +34,7 @@ func New(cfg config.Config, logger *slog.Logger, res resolver.Resolver) *Server 
 		resolver: res,
 		pool: sync.Pool{
 			New: func() any {
-				b := make([]byte, dns.MaxMessageSize)
-				return &b
+				return make([]byte, dns.MaxMessageSize)
 			},
 		},
 	}
@@ -49,15 +48,9 @@ func (s *Server) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	packetCh := make(chan packet, s.cfg.QueueSize)
 	var wg sync.WaitGroup
+	sema := make(chan struct{}, s.cfg.Workers)
 
-	for i := 0; i < s.cfg.Workers; i++ {
-		wg.Add(1)
-		go s.runWorker(ctx, packetCh, &wg)
-	}
-
-	errCh := make(chan error, len(s.cfg.ListenAddrs))
 	for _, addr := range s.cfg.ListenAddrs {
 		conn, err := net.ListenPacket("udp", addr)
 		if err != nil {
@@ -76,11 +69,10 @@ func (s *Server) Start(ctx context.Context) error {
 			}()
 
 			for {
-				bufPtr := s.pool.Get().(*[]byte)
-				buf := *bufPtr
+				buf := s.pool.Get().([]byte)
 				n, addr, readErr := c.ReadFrom(buf)
 				if readErr != nil {
-					s.pool.Put(bufPtr)
+					s.pool.Put(buf)
 					if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
 						return
 					}
@@ -88,79 +80,55 @@ func (s *Server) Start(ctx context.Context) error {
 					continue
 				}
 
-				s.totalQueries.Add(1)
+				s.TotalQueries.Add(1)
+
 				select {
-				case packetCh <- packet{bufPtr: bufPtr, n: n, addr: addr, conn: c}:
+				case sema <- struct{}{}:
+					wg.Add(1)
+					go func(data []byte, addr net.Addr, pc net.PacketConn) {
+						defer wg.Done()
+						defer func() {
+							<-sema
+							s.pool.Put(data)
+						}()
+
+						reqCtx := ctx
+						if s.cfg.Timeout > 0 {
+							var cancel context.CancelFunc
+							reqCtx, cancel = context.WithTimeout(ctx, s.cfg.Timeout)
+							defer cancel()
+						}
+
+						resp, err := s.resolver.Resolve(reqCtx, data[:n])
+						if err != nil {
+							s.HandlerErrors.Add(1)
+							s.logger.Error("handler error", "error", err)
+							return
+						}
+						if len(resp) == 0 {
+							return
+						}
+						if _, writeErr := pc.WriteTo(resp, addr); writeErr != nil {
+							s.WriteErrors.Add(1)
+							s.logger.Error("write error", "error", writeErr)
+						}
+					}(buf, addr, c)
 				default:
-					s.pool.Put(bufPtr)
-					s.droppedPackets.Add(1)
-					s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.droppedPackets.Load())
+					s.pool.Put(buf)
+					s.DroppedPackets.Add(1)
+					s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.DroppedPackets.Load())
 				}
 			}
 		}(conn)
 	}
 
-	select {
-	case <-ctx.Done():
-		s.logger.Info("shutting down")
-		close(packetCh)
-		wg.Wait()
-		s.logger.Info("server shutdown complete",
-			"total_queries", s.totalQueries.Load(),
-			"dropped_packets", s.droppedPackets.Load(),
-			"handler_errors", s.handlerErrors.Load(),
-			"write_errors", s.writeErrors.Load())
-		return ctx.Err()
-	case err := <-errCh:
-		s.logger.Error("critical error, shutting down", "error", err)
-		cancel()
-		close(packetCh)
-		wg.Wait()
-		return err
-	}
-}
-
-type packet struct {
-	bufPtr *[]byte
-	n      int
-	addr   net.Addr
-	conn   net.PacketConn
-}
-
-func (s *Server) DroppedPackets() uint64 {
-	return s.droppedPackets.Load()
-}
-
-func (s *Server) runWorker(ctx context.Context, packets <-chan packet, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for pkt := range packets {
-		reqCtx := ctx
-		var cancel context.CancelFunc
-		if s.cfg.Timeout > 0 {
-			reqCtx, cancel = context.WithTimeout(ctx, s.cfg.Timeout)
-		}
-
-		data := (*pkt.bufPtr)[:pkt.n]
-		resp, err := s.resolver.Resolve(reqCtx, data)
-		if cancel != nil {
-			cancel()
-		}
-
-		// Return buffer to pool as soon as we're done with 'data'
-		s.pool.Put(pkt.bufPtr)
-
-		if err != nil {
-			s.handlerErrors.Add(1)
-			s.logger.Error("handler error", "error", err)
-			continue
-		}
-		if len(resp) == 0 {
-			continue
-		}
-		if _, writeErr := pkt.conn.WriteTo(resp, pkt.addr); writeErr != nil {
-			s.writeErrors.Add(1)
-			s.logger.Error("write error", "error", writeErr)
-		}
-	}
+	<-ctx.Done()
+	s.logger.Info("shutting down")
+	wg.Wait()
+	s.logger.Info("server shutdown complete",
+		"total_queries", s.TotalQueries.Load(),
+		"dropped_packets", s.DroppedPackets.Load(),
+		"handler_errors", s.HandlerErrors.Load(),
+		"write_errors", s.WriteErrors.Load())
+	return ctx.Err()
 }

@@ -170,7 +170,7 @@ func TestE2EBackpressure(t *testing.T) {
 	}
 	wg.Wait()
 
-	require.Greater(t, srv.DroppedPackets(), uint64(0), "Should have dropped packets")
+	require.Greater(t, srv.DroppedPackets.Load(), uint64(0), "Should have dropped packets")
 	resp := sendQuery(t, serverAddr, "stable.com")
 	require.NotEmpty(t, resp)
 }
