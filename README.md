@@ -27,4 +27,4 @@ sudo ./bin/dnsd -listen :53 -upstreams 1.1.1.1:53,8.8.8.8:53
 ## Development
 - `make test`: Run unit tests
 - `make test-race`: Check for races
-- `-make test-e2e`: Run E2E tests
+- `make test-e2e`: Run E2E tests
