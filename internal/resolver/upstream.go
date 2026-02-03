@@ -54,7 +54,7 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	deadline := u.getDeadline(ctx)
 	_ = conn.SetDeadline(deadline)
@@ -84,7 +84,7 @@ func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	deadline := u.getDeadline(ctx)
 	_ = conn.SetDeadline(deadline)

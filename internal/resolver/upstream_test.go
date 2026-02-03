@@ -13,7 +13,7 @@ import (
 func TestUpstreamResolve(t *testing.T) {
 	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	done := make(chan struct{})
 	go func() {
@@ -42,7 +42,7 @@ func TestUpstreamResolve(t *testing.T) {
 func TestUpstreamTCPSizeLimit(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	// Temporarily reduce maxTCPSize for testing
 	oldMax := maxTCPSize

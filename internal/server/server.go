@@ -47,7 +47,8 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	pool := sync.Pool{New: func() any {
-		return make([]byte, dns.MaxMessageSize)
+		b := make([]byte, dns.MaxMessageSize)
+		return &b
 	}}
 
 	errCh := make(chan error, len(s.cfg.ListenAddrs))
@@ -61,7 +62,7 @@ func (s *Server) Start(ctx context.Context) error {
 		wg.Add(1)
 		go func(c net.PacketConn) {
 			defer wg.Done()
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 
 			go func() {
 				<-ctx.Done()
@@ -69,10 +70,11 @@ func (s *Server) Start(ctx context.Context) error {
 			}()
 
 			for {
-				buf := pool.Get().([]byte)
+				bufPtr := pool.Get().(*[]byte)
+				buf := *bufPtr
 				n, addr, readErr := c.ReadFrom(buf)
 				if readErr != nil {
-					pool.Put(buf)
+					pool.Put(bufPtr)
 					if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
 						return
 					}
@@ -82,7 +84,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 				data := make([]byte, n)
 				copy(data, buf[:n])
-				pool.Put(buf)
+				pool.Put(bufPtr)
 
 				s.totalQueries.Add(1)
 				select {
