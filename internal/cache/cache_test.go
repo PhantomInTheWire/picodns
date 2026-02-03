@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -51,4 +52,30 @@ func TestCacheEviction(t *testing.T) {
 	value, ok := cache.Get(Key{Name: "c.com", Type: 1, Class: 1})
 	require.True(t, ok)
 	require.Equal(t, []byte{3}, value)
+}
+
+func TestCacheStress(t *testing.T) {
+	cache := New(100, nil)
+	var wg sync.WaitGroup
+	numGoroutines := 100
+	opsPerGoroutine := 100
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				// Use both overlapping and unique keys
+				keyID := (id*opsPerGoroutine + j) % 200
+				key := Key{Name: "key-" + string(rune(keyID)) + ".com", Type: 1, Class: 1}
+
+				if j%2 == 0 {
+					cache.Set(key, []byte{byte(keyID)}, time.Minute)
+				} else {
+					cache.Get(key)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
 }
