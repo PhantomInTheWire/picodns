@@ -28,19 +28,19 @@ func New(max int, clock Clock) *Cache {
 	if clock == nil {
 		clock = time.Now
 	}
-	if max <= 0 {
-		return &Cache{clock: clock}
-	}
-	return &Cache{
+	c := &Cache{
 		max:   max,
 		clock: clock,
-		items: make(map[dns.Question]*list.Element),
-		lru:   list.New(),
 	}
+	if max > 0 {
+		c.items = make(map[dns.Question]*list.Element)
+		c.lru = list.New()
+	}
+	return c
 }
 
 func (c *Cache) Get(key dns.Question) ([]byte, bool) {
-	if c == nil || c.items == nil {
+	if c.items == nil {
 		return nil, false
 	}
 	key = key.Normalize()
@@ -57,20 +57,12 @@ func (c *Cache) Get(key dns.Question) ([]byte, bool) {
 		c.removeElement(elem)
 		return nil, false
 	}
-	if len(item.value) == 0 {
-		return nil, false
-	}
-	if c.lru != nil {
-		c.lru.MoveToFront(elem)
-	}
+	c.lru.MoveToFront(elem)
 	return item.value, true
 }
 
 func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
-	if c == nil || c.items == nil {
-		return false
-	}
-	if ttl <= 0 {
+	if c.items == nil || ttl <= 0 {
 		return false
 	}
 	key = key.Normalize()
@@ -78,45 +70,25 @@ func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	expires := c.clock().Add(ttl)
 	if elem, ok := c.items[key]; ok {
 		item := elem.Value.(*entry)
-		item.value = cloneBytes(value)
-		item.expires = c.clock().Add(ttl)
-		if c.lru != nil {
-			c.lru.MoveToFront(elem)
-		}
+		item.value = append([]byte(nil), value...)
+		item.expires = expires
+		c.lru.MoveToFront(elem)
 		return true
 	}
 
-	item := &entry{
-		key:     key,
-		value:   cloneBytes(value),
-		expires: c.clock().Add(ttl),
-	}
-	elem := c.lru.PushFront(item)
+	elem := c.lru.PushFront(&entry{key: key, value: append([]byte(nil), value...), expires: expires})
 	c.items[key] = elem
 
-	for c.lru.Len() > c.max {
-		back := c.lru.Back()
-		if back == nil {
-			break
-		}
-		c.removeElement(back)
+	if c.lru.Len() > c.max {
+		c.removeElement(c.lru.Back())
 	}
 	return true
 }
 
 func (c *Cache) removeElement(elem *list.Element) {
-	item := elem.Value.(*entry)
-	delete(c.items, item.key)
+	delete(c.items, elem.Value.(*entry).key)
 	c.lru.Remove(elem)
-}
-
-func cloneBytes(value []byte) []byte {
-	if len(value) == 0 {
-		return nil
-	}
-	cloned := make([]byte, len(value))
-	copy(cloned, value)
-	return cloned
 }

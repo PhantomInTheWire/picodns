@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestCacheStress(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < opsPerGoroutine; j++ {
 				keyID := (id*opsPerGoroutine + j) % 200
-				key := dns.Question{Name: "key-" + string(rune(keyID)) + ".com", Type: 1, Class: 1}
+				key := dns.Question{Name: fmt.Sprintf("key-%d.com", keyID), Type: 1, Class: 1}
 
 				if j%2 == 0 {
 					cache.Set(key, []byte{byte(keyID)}, time.Minute)
@@ -91,7 +92,7 @@ func TestCacheRaceWithExpiry(t *testing.T) {
 
 	// Set some entries that will expire
 	for i := 0; i < 50; i++ {
-		key := dns.Question{Name: "expire-" + string(rune(i)) + ".com", Type: 1, Class: 1}
+		key := dns.Question{Name: fmt.Sprintf("expire-%d.com", i), Type: 1, Class: 1}
 		cache.Set(key, []byte{byte(i)}, time.Second)
 	}
 
@@ -105,7 +106,7 @@ func TestCacheRaceWithExpiry(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				keyID := j % 50
-				key := dns.Question{Name: "expire-" + string(rune(keyID)) + ".com", Type: 1, Class: 1}
+				key := dns.Question{Name: fmt.Sprintf("expire-%d.com", keyID), Type: 1, Class: 1}
 				cache.Get(key)
 			}
 		}(i)
@@ -120,7 +121,7 @@ func TestCacheRaceWithLRUPromotion(t *testing.T) {
 
 	// Pre-populate cache
 	for i := 0; i < 50; i++ {
-		key := dns.Question{Name: "key-" + string(rune(i)) + ".com", Type: 1, Class: 1}
+		key := dns.Question{Name: fmt.Sprintf("key-%d.com", i), Type: 1, Class: 1}
 		cache.Set(key, []byte{byte(i)}, time.Hour)
 	}
 
@@ -131,7 +132,7 @@ func TestCacheRaceWithLRUPromotion(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 1000; j++ {
 				keyID := j % 50
-				key := dns.Question{Name: "key-" + string(rune(keyID)) + ".com", Type: 1, Class: 1}
+				key := dns.Question{Name: fmt.Sprintf("key-%d.com", keyID), Type: 1, Class: 1}
 				cache.Get(key)
 			}
 		}(i)
