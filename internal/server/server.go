@@ -17,6 +17,7 @@ type Server struct {
 	cfg            config.Config
 	logger         *slog.Logger
 	resolver       resolver.Resolver
+	pool           sync.Pool
 	totalQueries   atomic.Uint64
 	droppedPackets atomic.Uint64
 	handlerErrors  atomic.Uint64
@@ -27,7 +28,17 @@ func New(cfg config.Config, logger *slog.Logger, res resolver.Resolver) *Server 
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{cfg: cfg, logger: logger, resolver: res}
+	return &Server{
+		cfg:      cfg,
+		logger:   logger,
+		resolver: res,
+		pool: sync.Pool{
+			New: func() any {
+				b := make([]byte, dns.MaxMessageSize)
+				return &b
+			},
+		},
+	}
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -45,11 +56,6 @@ func (s *Server) Start(ctx context.Context) error {
 		wg.Add(1)
 		go s.runWorker(ctx, packetCh, &wg)
 	}
-
-	pool := sync.Pool{New: func() any {
-		b := make([]byte, dns.MaxMessageSize)
-		return &b
-	}}
 
 	errCh := make(chan error, len(s.cfg.ListenAddrs))
 	for _, addr := range s.cfg.ListenAddrs {
@@ -70,11 +76,11 @@ func (s *Server) Start(ctx context.Context) error {
 			}()
 
 			for {
-				bufPtr := pool.Get().(*[]byte)
+				bufPtr := s.pool.Get().(*[]byte)
 				buf := *bufPtr
 				n, addr, readErr := c.ReadFrom(buf)
 				if readErr != nil {
-					pool.Put(bufPtr)
+					s.pool.Put(bufPtr)
 					if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
 						return
 					}
@@ -82,14 +88,11 @@ func (s *Server) Start(ctx context.Context) error {
 					continue
 				}
 
-				data := make([]byte, n)
-				copy(data, buf[:n])
-				pool.Put(bufPtr)
-
 				s.totalQueries.Add(1)
 				select {
-				case packetCh <- packet{data: data, addr: addr, conn: c}:
+				case packetCh <- packet{bufPtr: bufPtr, n: n, addr: addr, conn: c}:
 				default:
+					s.pool.Put(bufPtr)
 					s.droppedPackets.Add(1)
 					s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.droppedPackets.Load())
 				}
@@ -118,9 +121,10 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 type packet struct {
-	data []byte
-	addr net.Addr
-	conn net.PacketConn
+	bufPtr *[]byte
+	n      int
+	addr   net.Addr
+	conn   net.PacketConn
 }
 
 func (s *Server) DroppedPackets() uint64 {
@@ -137,10 +141,15 @@ func (s *Server) runWorker(ctx context.Context, packets <-chan packet, wg *sync.
 			reqCtx, cancel = context.WithTimeout(ctx, s.cfg.Timeout)
 		}
 
-		resp, err := s.resolver.Resolve(reqCtx, pkt.data)
+		data := (*pkt.bufPtr)[:pkt.n]
+		resp, err := s.resolver.Resolve(reqCtx, data)
 		if cancel != nil {
 			cancel()
 		}
+
+		// Return buffer to pool as soon as we're done with 'data'
+		s.pool.Put(pkt.bufPtr)
+
 		if err != nil {
 			s.handlerErrors.Add(1)
 			s.logger.Error("handler error", "error", err)

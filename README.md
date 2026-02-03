@@ -3,10 +3,17 @@
 High-performance, lightweight DNS forwarding proxy in Go. Built for speed, reliability, and security.
 
 ## Features
-- **Fast**: Concurrent worker pool with bounded queues and zero-allocation metrics.
+- **Fast**: Concurrent worker pool with bounded queues and zero-allocation buffer reuse.
 - **Reliable**: Automatic TCP fallback, negative caching, and upstream failover.
 - **Secure**: Strict protocol validation, loop protection, and memory-safe parsing.
-- **Smart**: TTL-aware LRU cache and deep observability through structured logs.
+- **Smart**: TTL-aware LRU cache and deep observability through atomic metrics.
+
+## What makes PicoDNS different?
+Unlike "toy" DNS projects, PicoDNS implements production-grade features:
+- **Zero-Allocation Hot Path**: Buffer pooling via `sync.Pool` with pointer-optimized lifecycle management to minimize GC pressure.
+- **Resilient Protocol Parsing**: Built-in protection against DNS compression loops and malformed packet resource exhaustion.
+- **Production Observability**: Real-time tracking of cache hits, backpressure, and upstream latency using lock-free atomic counters.
+- **Full TCP Fallback**: Seamlessly handles large records by failing over to TCP when UDP truncation occurs.
 
 ## Quick Start
 ```bash
