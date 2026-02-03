@@ -124,6 +124,10 @@ type packet struct {
 	conn net.PacketConn
 }
 
+func (s *Server) DroppedPackets() uint64 {
+	return s.droppedPackets.Load()
+}
+
 func (s *Server) runWorker(ctx context.Context, packets <-chan packet, wg *sync.WaitGroup) {
 	defer wg.Done()
 
