@@ -2,15 +2,6 @@ package dns
 
 import "encoding/binary"
 
-const (
-	TypeA    uint16 = 1
-	TypeSOA  uint16 = 6
-	TypeAAAA uint16 = 28
-	ClassIN  uint16 = 1
-)
-
-const maxMessageSize = 4096
-
 type Answer struct {
 	Name  string
 	Type  uint16
@@ -39,7 +30,7 @@ func BuildResponse(req []byte, answers []Answer, rcode uint16) ([]byte, error) {
 		return nil, ErrShortBuffer
 	}
 
-	resp := make([]byte, maxMessageSize)
+	resp := make([]byte, MaxMessageSize)
 	respHeader := Header{
 		ID:      reqHeader.ID,
 		Flags:   responseFlags(reqHeader.Flags, rcode),
@@ -89,11 +80,5 @@ func BuildResponse(req []byte, answers []Answer, rcode uint16) ([]byte, error) {
 }
 
 func responseFlags(reqFlags uint16, rcode uint16) uint16 {
-	const (
-		flagQR     = 1 << 15
-		flagOpcode = 0x7800
-		flagRD     = 1 << 8
-		flagRA     = 1 << 7
-	)
-	return flagQR | (reqFlags & flagOpcode) | (reqFlags & flagRD) | flagRA | (rcode & 0x000F)
+	return FlagQR | (reqFlags & FlagOpcode) | (reqFlags & FlagRD) | FlagRA | (rcode & 0x000F)
 }

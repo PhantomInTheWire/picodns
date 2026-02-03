@@ -5,7 +5,9 @@ package e2e
 import (
 	"context"
 	"encoding/binary"
+	"log/slog"
 	"net"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,7 +17,6 @@ import (
 	"picodns/internal/cache"
 	"picodns/internal/config"
 	"picodns/internal/dns"
-	"picodns/internal/logging"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
 )
@@ -63,14 +64,12 @@ func TestE2ENegativeCache(t *testing.T) {
 			q, _, _ := dns.ReadQuestion(buf, dns.HeaderLen)
 			next, _ := dns.WriteQuestion(resp, dns.HeaderLen, q)
 
-			// Add SOA
 			soaStart := next
 			next, _ = dns.EncodeName(resp, soaStart, "example.com")
 			binary.BigEndian.PutUint16(resp[next:next+2], dns.TypeSOA)
 			binary.BigEndian.PutUint16(resp[next+2:next+4], dns.ClassIN)
 			binary.BigEndian.PutUint32(resp[next+4:next+8], 60) // TTL
 
-			// SOA RDATA
 			rdataStart := next + 10
 			mnameEnd, _ := dns.EncodeName(resp, rdataStart, "ns1.example.com")
 			rnameEnd, _ := dns.EncodeName(resp, mnameEnd, "admin.example.com")
@@ -145,7 +144,7 @@ func startUpstream(t *testing.T) (string, *int32, func()) {
 }
 
 func startServer(t *testing.T, upstream string) (string, func()) {
-	logger := logging.New("error")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := config.Default()
 	cfg.Upstreams = []string{upstream}
 	cfg.Workers = 4
@@ -162,9 +161,8 @@ func startServer(t *testing.T, upstream string) (string, func()) {
 	up := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
 	store := cache.New(cfg.CacheSize, nil)
 	res := resolver.NewCached(store, up)
-	handler := server.NewDNSHandler(res)
 
-	srv := server.New(cfg, logger, handler)
+	srv := server.New(cfg, logger, res)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		_ = srv.Start(ctx)

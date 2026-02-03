@@ -9,28 +9,25 @@ import (
 	"sync/atomic"
 
 	"picodns/internal/config"
+	"picodns/internal/dns"
+	"picodns/internal/resolver"
 )
 
 type Server struct {
 	cfg            config.Config
 	logger         *slog.Logger
-	handler        Handler
+	resolver       resolver.Resolver
 	totalQueries   atomic.Uint64
 	droppedPackets atomic.Uint64
 	handlerErrors  atomic.Uint64
 	writeErrors    atomic.Uint64
 }
 
-const maxPacketSize = 4096
-
-func New(cfg config.Config, logger *slog.Logger, handler Handler) *Server {
+func New(cfg config.Config, logger *slog.Logger, res resolver.Resolver) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if handler == nil {
-		handler = NoopHandler{}
-	}
-	return &Server{cfg: cfg, logger: logger, handler: handler}
+	return &Server{cfg: cfg, logger: logger, resolver: res}
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -50,7 +47,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	pool := sync.Pool{New: func() any {
-		return make([]byte, maxPacketSize)
+		return make([]byte, dns.MaxMessageSize)
 	}}
 
 	errCh := make(chan error, len(s.cfg.ListenAddrs))
@@ -138,7 +135,7 @@ func (s *Server) runWorker(ctx context.Context, packets <-chan packet, wg *sync.
 			reqCtx, cancel = context.WithTimeout(ctx, s.cfg.Timeout)
 		}
 
-		resp, err := s.handler.HandlePacket(reqCtx, pkt.data, pkt.addr)
+		resp, err := s.resolver.Resolve(reqCtx, pkt.data)
 		if cancel != nil {
 			cancel()
 		}

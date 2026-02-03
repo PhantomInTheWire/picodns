@@ -35,3 +35,27 @@ func TestQuestionRoundTrip(t *testing.T) {
 	require.Equal(t, next, end)
 	require.Equal(t, q, got)
 }
+
+func TestReadMessage(t *testing.T) {
+	buf := make([]byte, 512)
+	h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1, ANCount: 1}
+	require.NoError(t, WriteHeader(buf, h))
+
+	q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
+	qEnd, err := WriteQuestion(buf, HeaderLen, q)
+	require.NoError(t, err)
+
+	ans := Answer{Name: "", Type: TypeA, Class: ClassIN, TTL: 60, RData: []byte{1, 2, 3, 4}}
+	resp, err := BuildResponse(buf[:qEnd], []Answer{ans}, 0)
+	require.NoError(t, err)
+
+	msg, err := ReadMessage(resp)
+	require.NoError(t, err)
+	require.Equal(t, h.ID, msg.Header.ID)
+	require.Equal(t, uint16(1), msg.Header.QDCount)
+	require.Equal(t, uint16(1), msg.Header.ANCount)
+	require.Len(t, msg.Questions, 1)
+	require.Equal(t, "example.com", msg.Questions[0].Name)
+	require.Len(t, msg.Answers, 1)
+	require.Equal(t, uint32(60), msg.Answers[0].TTL)
+}

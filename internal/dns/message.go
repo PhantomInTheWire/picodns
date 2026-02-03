@@ -17,15 +17,23 @@ var (
 )
 
 const (
-	FlagQR = 0x8000
-	FlagTC = 0x0200
-	FlagRD = 0x0100
-	FlagRA = 0x0080
+	FlagQR     = 0x8000
+	FlagOpcode = 0x7800
+	FlagTC     = 0x0200
+	FlagRD     = 0x0100
+	FlagRA     = 0x0080
 
 	RcodeSuccess  = 0
 	RcodeFormat   = 1
 	RcodeServer   = 2
 	RcodeNXDomain = 3
+
+	TypeA    uint16 = 1
+	TypeSOA  uint16 = 6
+	TypeAAAA uint16 = 28
+	ClassIN  uint16 = 1
+
+	MaxMessageSize = 4096
 )
 
 type Header struct {
@@ -74,6 +82,110 @@ type Question struct {
 	Class uint16
 }
 
+func (q Question) Normalize() Question {
+	q.Name = strings.ToLower(strings.TrimSuffix(q.Name, "."))
+	return q
+}
+
+type Message struct {
+	Header      Header
+	Questions   []Question
+	Answers     []ResourceRecord
+	Authorities []ResourceRecord
+	Additionals []ResourceRecord
+}
+
+func ReadMessage(buf []byte) (Message, error) {
+	if len(buf) < HeaderLen {
+		return Message{}, ErrShortBuffer
+	}
+	header, err := ReadHeader(buf)
+	if err != nil {
+		return Message{}, err
+	}
+
+	msg := Message{
+		Header: header,
+	}
+
+	off := HeaderLen
+
+	msg.Questions = make([]Question, 0, header.QDCount)
+	for i := 0; i < int(header.QDCount); i++ {
+		q, next, err := ReadQuestion(buf, off)
+		if err != nil {
+			return Message{}, err
+		}
+		msg.Questions = append(msg.Questions, q)
+		off = next
+	}
+
+	msg.Answers = make([]ResourceRecord, 0, header.ANCount)
+	for i := 0; i < int(header.ANCount); i++ {
+		rr, next, err := ReadResourceRecord(buf, off)
+		if err != nil {
+			return Message{}, err
+		}
+		msg.Answers = append(msg.Answers, rr)
+		off = next
+	}
+
+	msg.Authorities = make([]ResourceRecord, 0, header.NSCount)
+	for i := 0; i < int(header.NSCount); i++ {
+		rr, next, err := ReadResourceRecord(buf, off)
+		if err != nil {
+			return Message{}, err
+		}
+		msg.Authorities = append(msg.Authorities, rr)
+		off = next
+	}
+
+	msg.Additionals = make([]ResourceRecord, 0, header.ARCount)
+	for i := 0; i < int(header.ARCount); i++ {
+		rr, next, err := ReadResourceRecord(buf, off)
+		if err != nil {
+			return Message{}, err
+		}
+		msg.Additionals = append(msg.Additionals, rr)
+		off = next
+	}
+
+	return msg, nil
+}
+
+type ResourceRecord struct {
+	Name  string
+	Type  uint16
+	Class uint16
+	TTL   uint32
+	Data  []byte
+}
+
+func ReadResourceRecord(buf []byte, off int) (ResourceRecord, int, error) {
+	name, next, err := DecodeName(buf, off)
+	if err != nil {
+		return ResourceRecord{}, 0, err
+	}
+	if len(buf) < next+10 {
+		return ResourceRecord{}, 0, ErrShortBuffer
+	}
+
+	rr := ResourceRecord{
+		Name:  name,
+		Type:  binary.BigEndian.Uint16(buf[next : next+2]),
+		Class: binary.BigEndian.Uint16(buf[next+2 : next+4]),
+		TTL:   binary.BigEndian.Uint32(buf[next+4 : next+8]),
+	}
+	dataLen := int(binary.BigEndian.Uint16(buf[next+8 : next+10]))
+	dataStart := next + 10
+	dataEnd := dataStart + dataLen
+	if dataEnd > len(buf) {
+		return ResourceRecord{}, 0, ErrShortBuffer
+	}
+	rr.Data = buf[dataStart:dataEnd]
+	return rr, dataEnd, nil
+}
+
 func ReadQuestion(buf []byte, off int) (Question, int, error) {
 	name, next, err := DecodeName(buf, off)
 	if err != nil {
@@ -105,7 +217,6 @@ func WriteQuestion(buf []byte, off int, q Question) (int, error) {
 	return next + 4, nil
 }
 
-// ValidateResponse verifies that the response matches the request.
 func ValidateResponse(req, resp []byte) error {
 	reqHeader, err := ReadHeader(req)
 	if err != nil {

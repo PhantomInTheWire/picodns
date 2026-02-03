@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,13 +18,11 @@ import (
 	"picodns/internal/cache"
 	"picodns/internal/config"
 	"picodns/internal/dns"
-	"picodns/internal/logging"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
 )
 
 func TestE2ETCPFallback(t *testing.T) {
-	// Start a UDP upstream that returns TC=1
 	udpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer udpConn.Close()
@@ -37,7 +37,6 @@ func TestE2ETCPFallback(t *testing.T) {
 			}
 			atomic.AddInt32(&udpHits, 1)
 
-			// Return TC=1 response
 			resp := make([]byte, 512)
 			h := dns.Header{
 				ID:      binary.BigEndian.Uint16(buf[0:2]),
@@ -47,13 +46,9 @@ func TestE2ETCPFallback(t *testing.T) {
 			_ = dns.WriteHeader(resp, h)
 			q, _, _ := dns.ReadQuestion(buf, dns.HeaderLen)
 			_, _ = dns.WriteQuestion(resp, dns.HeaderLen, q)
-			_, _ = udpConn.WriteTo(resp[:dns.HeaderLen+len(q.Name)+5], addr) // Approximate length
+			_, _ = udpConn.WriteTo(resp[:dns.HeaderLen+len(q.Name)+5], addr)
 		}
 	}()
-
-	// Start a TCP upstream on the same port (sharing addr)
-	// Actually we can't easily share the same port for UDP and TCP in this simple setup without knowing the port.
-	// But Upstream.query uses the same address string for both.
 
 	addr := udpConn.LocalAddr().String()
 	tcpListen, err := net.Listen("tcp", addr)
@@ -69,14 +64,12 @@ func TestE2ETCPFallback(t *testing.T) {
 			}
 			atomic.AddInt32(&tcpHits, 1)
 
-			// Read 2-byte length
 			lenBuf := make([]byte, 2)
 			_, _ = io.ReadFull(conn, lenBuf)
 			reqLen := binary.BigEndian.Uint16(lenBuf)
 			req := make([]byte, reqLen)
 			_, _ = io.ReadFull(conn, req)
 
-			// Send response
 			resp, _ := dns.BuildResponse(req, []dns.Answer{
 				{
 					Type:  dns.TypeA,
@@ -108,7 +101,6 @@ func TestE2ETCPFallback(t *testing.T) {
 }
 
 func TestE2EBackpressure(t *testing.T) {
-	// Start a slow upstream
 	upstreamConn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer upstreamConn.Close()
@@ -143,7 +135,6 @@ func TestE2EBackpressure(t *testing.T) {
 
 	upstreamAddr := upstreamConn.LocalAddr().String()
 
-	// Initialize server with small QueueSize and 1 worker
 	cfg := config.Default()
 	cfg.Upstreams = []string{upstreamAddr}
 	cfg.Workers = 1
@@ -156,20 +147,18 @@ func TestE2EBackpressure(t *testing.T) {
 	_ = listen.Close()
 	cfg.ListenAddrs = []string{serverAddr}
 
-	logger := logging.New("error")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	up := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
 	store := cache.New(cfg.CacheSize, nil)
 	res := resolver.NewCached(store, up)
-	handler := server.NewDNSHandler(res)
 
-	srv := server.New(cfg, logger, handler)
+	srv := server.New(cfg, logger, res)
 	go func() {
 		_ = srv.Start(ctx)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
 
-	// Send 50 concurrent queries
 	var wg sync.WaitGroup
 	numQueries := 50
 	for i := 0; i < numQueries; i++ {
@@ -182,7 +171,6 @@ func TestE2EBackpressure(t *testing.T) {
 	wg.Wait()
 
 	require.Greater(t, srv.DroppedPackets(), uint64(0), "Should have dropped packets")
-	// Server should still be stable (responsive)
 	resp := sendQuery(t, serverAddr, "stable.com")
 	require.NotEmpty(t, resp)
 }

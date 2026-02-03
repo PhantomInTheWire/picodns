@@ -25,7 +25,6 @@ func TestEncodeNameExactBuffer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 5, next)
 
-	// Verify it can be decoded
 	name, end, err := DecodeName(buf, 0)
 	require.NoError(t, err)
 	require.Equal(t, next, end)

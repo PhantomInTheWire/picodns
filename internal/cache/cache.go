@@ -2,29 +2,24 @@ package cache
 
 import (
 	"container/list"
-	"strings"
 	"sync"
 	"time"
+
+	"picodns/internal/dns"
 )
 
 type Clock func() time.Time
-
-type Key struct {
-	Name  string
-	Type  uint16 // DNS record type (e.g., A, AAAA, CNAME)
-	Class uint16 // DNS query class (e.g., IN for Internet)
-}
 
 type Cache struct {
 	mu    sync.Mutex
 	max   int
 	clock Clock
-	items map[Key]*list.Element
+	items map[dns.Question]*list.Element
 	lru   *list.List
 }
 
 type entry struct {
-	key     Key
+	key     dns.Question
 	value   []byte
 	expires time.Time
 }
@@ -33,19 +28,22 @@ func New(max int, clock Clock) *Cache {
 	if clock == nil {
 		clock = time.Now
 	}
+	if max <= 0 {
+		return &Cache{clock: clock}
+	}
 	return &Cache{
 		max:   max,
 		clock: clock,
-		items: make(map[Key]*list.Element),
+		items: make(map[dns.Question]*list.Element),
 		lru:   list.New(),
 	}
 }
 
-func (c *Cache) Get(key Key) ([]byte, bool) {
-	if c == nil || c.max <= 0 {
+func (c *Cache) Get(key dns.Question) ([]byte, bool) {
+	if c == nil || c.items == nil {
 		return nil, false
 	}
-	key = normalizeKey(key)
+	key = key.Normalize()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -62,20 +60,22 @@ func (c *Cache) Get(key Key) ([]byte, bool) {
 	if len(item.value) == 0 {
 		return nil, false
 	}
-	c.lru.MoveToFront(elem)
+	if c.lru != nil {
+		c.lru.MoveToFront(elem)
+	}
 	value := make([]byte, len(item.value))
 	copy(value, item.value)
 	return value, true
 }
 
-func (c *Cache) Set(key Key, value []byte, ttl time.Duration) bool {
-	if c == nil || c.max <= 0 {
+func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
+	if c == nil || c.items == nil {
 		return false
 	}
 	if ttl <= 0 {
 		return false
 	}
-	key = normalizeKey(key)
+	key = key.Normalize()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -84,7 +84,9 @@ func (c *Cache) Set(key Key, value []byte, ttl time.Duration) bool {
 		item := elem.Value.(*entry)
 		item.value = cloneBytes(value)
 		item.expires = c.clock().Add(ttl)
-		c.lru.MoveToFront(elem)
+		if c.lru != nil {
+			c.lru.MoveToFront(elem)
+		}
 		return true
 	}
 
@@ -110,11 +112,6 @@ func (c *Cache) removeElement(elem *list.Element) {
 	item := elem.Value.(*entry)
 	delete(c.items, item.key)
 	c.lru.Remove(elem)
-}
-
-func normalizeKey(key Key) Key {
-	key.Name = strings.ToLower(strings.TrimSuffix(key.Name, "."))
-	return key
 }
 
 func cloneBytes(value []byte) []byte {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"sync/atomic"
 	"time"
 
 	"picodns/internal/dns"
@@ -18,10 +17,8 @@ var (
 )
 
 type Upstream struct {
-	upstreams    []string
-	timeout      time.Duration
-	totalLatency atomic.Uint64 // nanoseconds
-	queryCount   atomic.Uint64
+	upstreams []string
+	timeout   time.Duration
 }
 
 func NewUpstream(upstreams []string, timeout time.Duration) *Upstream {
@@ -38,11 +35,8 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 
 	var lastErr error
 	for _, upstream := range u.upstreams {
-		start := time.Now()
 		resp, err := u.query(ctx, upstream, req)
 		if err == nil {
-			u.totalLatency.Add(uint64(time.Since(start)))
-			u.queryCount.Add(1)
 			return resp, nil
 		}
 		lastErr = err
@@ -62,14 +56,7 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 	}
 	defer conn.Close()
 
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		timeout := u.timeout
-		if timeout <= 0 {
-			timeout = 5 * time.Second
-		}
-		deadline = time.Now().Add(timeout)
-	}
+	deadline := u.getDeadline(ctx)
 	_ = conn.SetDeadline(deadline)
 
 	if _, err := conn.Write(req); err != nil {
@@ -99,14 +86,7 @@ func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([
 	}
 	defer conn.Close()
 
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		timeout := u.timeout
-		if timeout <= 0 {
-			timeout = 5 * time.Second
-		}
-		deadline = time.Now().Add(timeout)
-	}
+	deadline := u.getDeadline(ctx)
 	_ = conn.SetDeadline(deadline)
 
 	reqLen := uint16(len(req))
@@ -134,4 +114,15 @@ func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([
 	}
 
 	return resp, nil
+}
+
+func (u *Upstream) getDeadline(ctx context.Context) time.Time {
+	if deadline, ok := ctx.Deadline(); ok {
+		return deadline
+	}
+	timeout := u.timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	return time.Now().Add(timeout)
 }
