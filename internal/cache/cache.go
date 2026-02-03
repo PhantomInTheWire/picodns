@@ -11,7 +11,7 @@ import (
 type Clock func() time.Time
 
 type Cache struct {
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	max   int
 	clock Clock
 	items map[dns.Question]*list.Element
@@ -45,8 +45,8 @@ func (c *Cache) Get(key dns.Question) ([]byte, bool) {
 	}
 	key = key.Normalize()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	elem, ok := c.items[key]
 	if !ok {
