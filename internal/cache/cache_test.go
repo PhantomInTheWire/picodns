@@ -80,3 +80,61 @@ func TestCacheStress(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestCacheRaceWithExpiry(t *testing.T) {
+	// This test specifically triggers the race condition where Get() tries to
+	// remove expired entries while holding only a read lock
+	now := time.Now()
+	clock := func() time.Time { return now }
+	cache := New(100, clock)
+	var wg sync.WaitGroup
+
+	// Set some entries that will expire
+	for i := 0; i < 50; i++ {
+		key := dns.Question{Name: "expire-" + string(rune(i)) + ".com", Type: 1, Class: 1}
+		cache.Set(key, []byte{byte(i)}, time.Second)
+	}
+
+	// Advance time so entries are expired
+	now = now.Add(2 * time.Second)
+
+	// Concurrent reads that trigger expired entry removal
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				keyID := j % 50
+				key := dns.Question{Name: "expire-" + string(rune(keyID)) + ".com", Type: 1, Class: 1}
+				cache.Get(key)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+func TestCacheRaceWithLRUPromotion(t *testing.T) {
+	// This test triggers race on LRU list manipulation during concurrent reads
+	cache := New(100, nil)
+	var wg sync.WaitGroup
+
+	// Pre-populate cache
+	for i := 0; i < 50; i++ {
+		key := dns.Question{Name: "key-" + string(rune(i)) + ".com", Type: 1, Class: 1}
+		cache.Set(key, []byte{byte(i)}, time.Hour)
+	}
+
+	// Concurrent reads that trigger MoveToFront
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 1000; j++ {
+				keyID := j % 50
+				key := dns.Question{Name: "key-" + string(rune(keyID)) + ".com", Type: 1, Class: 1}
+				cache.Get(key)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
