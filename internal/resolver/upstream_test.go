@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"encoding/binary"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -55,6 +56,15 @@ func TestUpstreamTCPSizeLimit(t *testing.T) {
 			return
 		}
 		defer func() { _ = conn.Close() }()
+
+		// Read the length and request to ensure the client has finished writing
+		var reqLen uint16
+		if err := binary.Read(conn, binary.BigEndian, &reqLen); err != nil {
+			return
+		}
+		if _, err := io.CopyN(io.Discard, conn, int64(reqLen)); err != nil {
+			return
+		}
 
 		_ = binary.Write(conn, binary.BigEndian, uint16(20))
 	}()
