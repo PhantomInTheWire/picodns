@@ -27,9 +27,16 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	upstream := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
 	cacheStore := cache.New(cfg.CacheSize, nil)
-	res := resolver.NewCached(cacheStore, upstream)
+
+	var res resolver.Resolver
+	if cfg.Recursive || len(cfg.Upstreams) == 0 {
+		logger.Info("using recursive resolver")
+		res = resolver.NewCached(cacheStore, resolver.NewRecursive(cfg.Timeout))
+	} else {
+		logger.Info("using upstream resolver", "upstreams", cfg.Upstreams)
+		res = resolver.NewCached(cacheStore, resolver.NewUpstream(cfg.Upstreams, cfg.Timeout))
+	}
 
 	srv := server.New(cfg, logger, res)
 	if err := srv.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {

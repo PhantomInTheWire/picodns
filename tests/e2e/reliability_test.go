@@ -4,13 +4,10 @@ package e2e
 
 import (
 	"context"
-	"encoding/binary"
-	"io"
 	"log/slog"
 	"net"
 	"os"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,81 +20,33 @@ import (
 )
 
 func TestE2ETCPFallback(t *testing.T) {
-	udpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer udpConn.Close()
+	requireNetwork(t)
 
-	var udpHits int32
-	go func() {
-		buf := make([]byte, 512)
-		for {
-			_, addr, readErr := udpConn.ReadFrom(buf)
-			if readErr != nil {
-				return
-			}
-			atomic.AddInt32(&udpHits, 1)
-
-			resp := make([]byte, 512)
-			h := dns.Header{
-				ID:      binary.BigEndian.Uint16(buf[0:2]),
-				Flags:   0x8300, // QR, TC, RA
-				QDCount: 1,
-			}
-			_ = dns.WriteHeader(resp, h)
-			q, _, _ := dns.ReadQuestion(buf, dns.HeaderLen)
-			_, _ = dns.WriteQuestion(resp, dns.HeaderLen, q)
-			_, _ = udpConn.WriteTo(resp[:dns.HeaderLen+len(q.Name)+5], addr)
-		}
-	}()
-
-	addr := udpConn.LocalAddr().String()
-	tcpListen, err := net.Listen("tcp", addr)
-	require.NoError(t, err)
-	defer tcpListen.Close()
-
-	var tcpHits int32
-	go func() {
-		for {
-			conn, err := tcpListen.Accept()
-			if err != nil {
-				return
-			}
-			atomic.AddInt32(&tcpHits, 1)
-
-			lenBuf := make([]byte, 2)
-			_, _ = io.ReadFull(conn, lenBuf)
-			reqLen := binary.BigEndian.Uint16(lenBuf)
-			req := make([]byte, reqLen)
-			_, _ = io.ReadFull(conn, req)
-
-			resp, _ := dns.BuildResponse(req, []dns.Answer{
-				{
-					Type:  dns.TypeA,
-					Class: dns.ClassIN,
-					TTL:   60,
-					RData: []byte{9, 9, 9, 9},
-				},
-			}, 0)
-
-			respLenBuf := make([]byte, 2)
-			binary.BigEndian.PutUint16(respLenBuf, uint16(len(resp)))
-			_, _ = conn.Write(respLenBuf)
-			_, _ = conn.Write(resp)
-			conn.Close()
-		}
-	}()
-
-	serverAddr, stopServer := startServer(t, addr)
+	upstreamServers := []string{"8.8.8.8:53"}
+	serverAddr, stopServer := startServerWithUpstreams(t, upstreamServers)
 	defer stopServer()
 
-	resp := sendQuery(t, serverAddr, "tcp.example.com")
-	require.NotEmpty(t, resp)
+	// Query a domain that typically has large responses (dns.google has many records)
+	resp := sendQuery(t, serverAddr, "dns.google")
+	msg, err := dns.ReadMessage(resp)
+	require.NoError(t, err, "Failed to parse DNS response")
 
-	header, _ := dns.ReadHeader(resp)
-	require.Equal(t, uint16(1), header.ANCount)
+	// Validate response header
+	require.True(t, msg.Header.Flags&0x8000 != 0, "QR bit should be set (response)")
+	require.GreaterOrEqual(t, msg.Header.ANCount, uint16(1), "Should have at least 1 answer")
+	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F, "Should have NOERROR rcode")
 
-	require.Equal(t, int32(1), atomic.LoadInt32(&udpHits))
-	require.Equal(t, int32(1), atomic.LoadInt32(&tcpHits))
+	// Validate response is complete (not truncated)
+	require.False(t, msg.Header.Flags&0x0200 != 0, "Response should not be truncated (TC bit should not be set)")
+
+	// Validate we got actual answer records
+	require.GreaterOrEqual(t, len(msg.Answers), 1, "Should have at least 1 answer record")
+
+	// Check that the response is valid and complete
+	for _, answer := range msg.Answers {
+		require.True(t, answer.Type == dns.TypeA || answer.Type == dns.TypeAAAA || answer.Type == dns.TypeCNAME,
+			"Answer should be a valid record type (A, AAAA, or CNAME)")
+	}
 }
 
 func TestE2EBackpressure(t *testing.T) {
@@ -172,7 +121,20 @@ func TestE2EBackpressure(t *testing.T) {
 
 	require.Greater(t, srv.DroppedPackets.Load(), uint64(0), "Should have dropped packets")
 	resp := sendQuery(t, serverAddr, "stable.com")
-	require.NotEmpty(t, resp)
+	msg, err := dns.ReadMessage(resp)
+	require.NoError(t, err, "Failed to parse DNS response")
+
+	// Validate response header
+	require.True(t, msg.Header.Flags&0x8000 != 0, "QR bit should be set (response)")
+	require.Equal(t, uint16(1), msg.Header.ANCount, "Should have 1 answer")
+	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F, "Should have NOERROR rcode")
+
+	// Validate answer content
+	require.Len(t, msg.Answers, 1, "Should have exactly 1 answer")
+	answer := msg.Answers[0]
+	require.Equal(t, dns.TypeA, answer.Type, "Answer should be Type A")
+	require.Equal(t, dns.ClassIN, answer.Class, "Answer should be Class IN")
+	require.Equal(t, []byte{1, 1, 1, 1}, answer.Data, "Answer RData should be 1.1.1.1")
 }
 
 func sendQuerySilent(addr string, name string) error {

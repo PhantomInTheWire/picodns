@@ -28,10 +28,14 @@ const (
 	RcodeServer   = 2
 	RcodeNXDomain = 3
 
-	TypeA    uint16 = 1
-	TypeSOA  uint16 = 6
-	TypeAAAA uint16 = 28
-	ClassIN  uint16 = 1
+	TypeA     uint16 = 1
+	TypeNS    uint16 = 2
+	TypeCNAME uint16 = 5
+	TypeSOA   uint16 = 6
+	TypeMX    uint16 = 15
+	TypeTXT   uint16 = 16
+	TypeAAAA  uint16 = 28
+	ClassIN   uint16 = 1
 
 	MaxMessageSize = 4096
 )
@@ -154,11 +158,12 @@ func ReadMessage(buf []byte) (Message, error) {
 }
 
 type ResourceRecord struct {
-	Name  string
-	Type  uint16
-	Class uint16
-	TTL   uint32
-	Data  []byte
+	Name       string
+	Type       uint16
+	Class      uint16
+	TTL        uint32
+	Data       []byte
+	DataOffset int
 }
 
 func ReadResourceRecord(buf []byte, off int) (ResourceRecord, int, error) {
@@ -171,10 +176,11 @@ func ReadResourceRecord(buf []byte, off int) (ResourceRecord, int, error) {
 	}
 
 	rr := ResourceRecord{
-		Name:  name,
-		Type:  binary.BigEndian.Uint16(buf[next : next+2]),
-		Class: binary.BigEndian.Uint16(buf[next+2 : next+4]),
-		TTL:   binary.BigEndian.Uint32(buf[next+4 : next+8]),
+		Name:       name,
+		Type:       binary.BigEndian.Uint16(buf[next : next+2]),
+		Class:      binary.BigEndian.Uint16(buf[next+2 : next+4]),
+		TTL:        binary.BigEndian.Uint32(buf[next+4 : next+8]),
+		DataOffset: next + 10,
 	}
 	dataLen := int(binary.BigEndian.Uint16(buf[next+8 : next+10]))
 	dataStart := next + 10
@@ -231,7 +237,6 @@ func ValidateResponse(req, resp []byte) error {
 		return ErrIDMismatch
 	}
 
-	// QR bit is the most significant bit of the flags
 	if respHeader.Flags&0x8000 == 0 {
 		return ErrNotResponse
 	}

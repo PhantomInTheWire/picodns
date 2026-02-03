@@ -14,6 +14,7 @@ type Config struct {
 	Timeout     time.Duration
 	CacheSize   int
 	LogLevel    string
+	Recursive   bool
 }
 
 func Default() Config {
@@ -42,6 +43,7 @@ func BindFlags(cfg *Config) {
 	flag.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "upstream timeout")
 	flag.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "max cache entries")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level (debug, info, warn, error)")
+	flag.BoolVar(&cfg.Recursive, "recursive", cfg.Recursive, "use recursive resolution instead of forwarding to upstreams")
 
 	flag.Parse()
 

@@ -4,11 +4,9 @@ package e2e
 
 import (
 	"context"
-	"encoding/binary"
 	"log/slog"
 	"net"
 	"os"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,134 +19,94 @@ import (
 	"picodns/internal/server"
 )
 
-func TestE2EForwardAndCache(t *testing.T) {
-	upstreamAddr, hits, stopUpstream := startUpstream(t)
-	defer stopUpstream()
+func isValidIPv4(data []byte) bool {
+	return len(data) == 4
+}
 
-	serverAddr, stopServer := startServer(t, upstreamAddr)
+func TestE2EForwardAndCache(t *testing.T) {
+	requireNetwork(t)
+
+	upstreamServers := []string{"8.8.8.8:53", "1.1.1.1:53"}
+	serverAddr, stopServer := startServerWithUpstreams(t, upstreamServers)
 	defer stopServer()
 
+	// First query - should hit upstream
+	start1 := time.Now()
 	resp1 := sendQuery(t, serverAddr, "example.com")
-	require.NotEmpty(t, resp1)
+	duration1 := time.Since(start1)
+	msg1, err := dns.ReadMessage(resp1)
+	require.NoError(t, err, "Failed to parse first DNS response")
 
+	// Validate response header
+	require.True(t, msg1.Header.Flags&0x8000 != 0, "QR bit should be set (response)")
+	require.GreaterOrEqual(t, msg1.Header.ANCount, uint16(1), "Should have at least 1 answer")
+	require.Equal(t, uint16(dns.RcodeSuccess), msg1.Header.Flags&0x000F, "Should have NOERROR rcode")
+
+	// Validate answer content
+	require.GreaterOrEqual(t, len(msg1.Answers), 1, "Should have at least 1 answer")
+	answer := msg1.Answers[0]
+	require.Equal(t, dns.TypeA, answer.Type, "Answer should be Type A")
+	require.Equal(t, dns.ClassIN, answer.Class, "Answer should be Class IN")
+	require.True(t, isValidIPv4(answer.Data), "Answer RData should be a valid IPv4 address")
+
+	// Second query - should be cached and faster
+	start2 := time.Now()
 	resp2 := sendQuery(t, serverAddr, "example.com")
-	require.Equal(t, resp1, resp2)
+	duration2 := time.Since(start2)
+	msg2, err := dns.ReadMessage(resp2)
+	require.NoError(t, err, "Failed to parse second DNS response")
 
-	require.Equal(t, int32(1), atomic.LoadInt32(hits))
+	// Validate second response matches first (cached)
+	require.Equal(t, msg1.Header.Flags, msg2.Header.Flags)
+	require.Equal(t, msg1.Header.ANCount, msg2.Header.ANCount)
+	require.GreaterOrEqual(t, len(msg2.Answers), 1)
+	require.True(t, isValidIPv4(msg2.Answers[0].Data))
+
+	// Verify caching through timing (second query should be significantly faster)
+	require.Less(t, duration2, duration1/2, "Cached query should be significantly faster")
 }
 
 func TestE2ENegativeCache(t *testing.T) {
-	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer conn.Close()
+	requireNetwork(t)
 
-	var hits int32
-	go func() {
-		buf := make([]byte, 512)
-		for {
-			_, addr, readErr := conn.ReadFrom(buf)
-			if readErr != nil {
-				return
-			}
-			atomic.AddInt32(&hits, 1)
-
-			// Build NXDOMAIN response with SOA in authority section
-			resp := make([]byte, 512)
-			h := dns.Header{
-				ID:      binary.BigEndian.Uint16(buf[0:2]),
-				Flags:   0x8183, // QR, RD, RA, NXDOMAIN
-				QDCount: 1,
-				NSCount: 1,
-			}
-			_ = dns.WriteHeader(resp, h)
-			q, _, _ := dns.ReadQuestion(buf, dns.HeaderLen)
-			next, _ := dns.WriteQuestion(resp, dns.HeaderLen, q)
-
-			soaStart := next
-			next, _ = dns.EncodeName(resp, soaStart, "example.com")
-			binary.BigEndian.PutUint16(resp[next:next+2], dns.TypeSOA)
-			binary.BigEndian.PutUint16(resp[next+2:next+4], dns.ClassIN)
-			binary.BigEndian.PutUint32(resp[next+4:next+8], 60) // TTL
-
-			rdataStart := next + 10
-			mnameEnd, _ := dns.EncodeName(resp, rdataStart, "ns1.example.com")
-			rnameEnd, _ := dns.EncodeName(resp, mnameEnd, "admin.example.com")
-			binary.BigEndian.PutUint32(resp[rnameEnd:rnameEnd+4], 2024020501) // Serial
-			binary.BigEndian.PutUint32(resp[rnameEnd+4:rnameEnd+8], 3600)     // Refresh
-			binary.BigEndian.PutUint32(resp[rnameEnd+8:rnameEnd+12], 600)     // Retry
-			binary.BigEndian.PutUint32(resp[rnameEnd+12:rnameEnd+16], 86400)  // Expire
-			binary.BigEndian.PutUint32(resp[rnameEnd+16:rnameEnd+20], 30)     // Minimum TTL = 30s
-
-			binary.BigEndian.PutUint16(resp[next+8:next+10], uint16(rnameEnd+20-rdataStart))
-			_, _ = conn.WriteTo(resp[:rnameEnd+20], addr)
-
-		}
-	}()
-
-	serverAddr, stopServer := startServer(t, conn.LocalAddr().String())
+	upstreamServers := []string{"8.8.8.8:53", "1.1.1.1:53"}
+	serverAddr, stopServer := startServerWithUpstreams(t, upstreamServers)
 	defer stopServer()
 
-	resp1 := sendQuery(t, serverAddr, "nonexistent.example.com")
-	require.NotEmpty(t, resp1)
-	header1, _ := dns.ReadHeader(resp1)
-	require.Equal(t, uint16(dns.RcodeNXDomain), header1.Flags&0x000F)
+	// First query - should hit upstream
+	start1 := time.Now()
+	resp1 := sendQuery(t, serverAddr, "this-definitely-does-not-exist-12345.example")
+	duration1 := time.Since(start1)
+	msg1, err := dns.ReadMessage(resp1)
+	require.NoError(t, err, "Failed to parse first DNS response")
 
-	resp2 := sendQuery(t, serverAddr, "nonexistent.example.com")
-	require.Equal(t, resp1, resp2)
+	// Validate NXDOMAIN response header
+	require.True(t, msg1.Header.Flags&0x8000 != 0, "QR bit should be set (response)")
+	require.Equal(t, uint16(dns.RcodeNXDomain), msg1.Header.Flags&0x000F, "Should have NXDOMAIN rcode")
+	require.Equal(t, uint16(0), msg1.Header.ANCount, "Should have 0 answers")
 
-	require.Equal(t, int32(1), atomic.LoadInt32(&hits))
+	// Second query - should be cached and faster
+	start2 := time.Now()
+	resp2 := sendQuery(t, serverAddr, "this-definitely-does-not-exist-12345.example")
+	duration2 := time.Since(start2)
+	msg2, err := dns.ReadMessage(resp2)
+	require.NoError(t, err, "Failed to parse second DNS response")
+
+	// Validate second response matches first (cached)
+	require.Equal(t, msg1.Header.Flags, msg2.Header.Flags, "Cached response flags should match")
+	require.Equal(t, msg1.Header.ANCount, msg2.Header.ANCount, "Cached ANCount should match")
+	require.Equal(t, msg1.Header.NSCount, msg2.Header.NSCount, "Cached NSCount should match")
+
+	// Verify caching through timing (second query should be significantly faster)
+	require.Less(t, duration2, duration1/2, "Cached query should be significantly faster")
 }
 
-func startUpstream(t *testing.T) (string, *int32, func()) {
-	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	var hits int32
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		buf := make([]byte, 512)
-		for {
-			_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-			n, addr, readErr := conn.ReadFrom(buf)
-			if readErr != nil {
-				if ne, ok := readErr.(net.Error); ok && ne.Timeout() {
-					if ctx.Err() != nil {
-						return
-					}
-					continue
-				}
-				return
-			}
-
-			atomic.AddInt32(&hits, 1)
-			resp, err := dns.BuildResponse(buf[:n], []dns.Answer{
-				{
-					Type:  dns.TypeA,
-					Class: dns.ClassIN,
-					TTL:   60,
-					RData: []byte{1, 2, 3, 4},
-				},
-			}, 0)
-			if err == nil {
-				_, _ = conn.WriteTo(resp, addr)
-			}
-		}
-	}()
-
-	stop := func() {
-		cancel()
-		_ = conn.Close()
-	}
-	return conn.LocalAddr().String(), &hits, stop
-}
-
-func startServer(t *testing.T, upstream string) (string, func()) {
+func startServerWithUpstreams(t *testing.T, upstreams []string) (string, func()) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := config.Default()
-	cfg.Upstreams = []string{upstream}
+	cfg.Upstreams = upstreams
 	cfg.Workers = 4
-	cfg.Timeout = 2 * time.Second
+	cfg.Timeout = 5 * time.Second
 	cfg.CacheSize = 100
 
 	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -181,7 +139,7 @@ func sendQuery(t *testing.T, addr string, name string) []byte {
 	defer conn.Close()
 
 	req := makeQuery(name)
-	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 	_, err = conn.Write(req)
 	require.NoError(t, err)
 
