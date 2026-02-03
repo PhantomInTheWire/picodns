@@ -163,7 +163,7 @@ func deserializeCacheEntry(data []byte) (*dnsCacheEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	entry.Additionals, off, err = deserializeRecords(data, off, int(entry.Header.ARCount))
+	entry.Additionals, _, err = deserializeRecords(data, off, int(entry.Header.ARCount))
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,9 @@ func buildResponseFromCache(entry *dnsCacheEntry, q dns.Question, queryID uint16
 		NSCount: uint16(len(entry.Authorities)),
 		ARCount: uint16(len(entry.Additionals)),
 	}
-	dns.WriteHeader(buf, header)
+	if err := dns.WriteHeader(buf, header); err != nil {
+		return nil
+	}
 
 	// Write question section
 	off := dns.HeaderLen

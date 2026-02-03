@@ -1,10 +1,13 @@
-.PHONY: test test-e2e test-race fmt build clean lint
+.PHONY: test test-e2e test-e2e-network test-race fmt build clean lint
 
 test:
 	go test ./...
 
 test-e2e:
 	go test -tags=e2e ./tests/e2e
+
+test-e2e-network:
+	E2E_REAL_NETWORK=1 go test -tags=e2e ./tests/e2e/... -v -timeout 120s
 
 test-race:
 	go test -race ./...
