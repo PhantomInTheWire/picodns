@@ -63,7 +63,8 @@ func TestExtractReferral_InBailiwick(t *testing.T) {
 		NSCount: 1,
 		ARCount: 1,
 	}
-	dns.WriteHeader(buf, header)
+	err := dns.WriteHeader(buf, header)
+	require.NoError(t, err)
 
 	msg, err := dns.ReadMessage(buf[:off])
 	require.NoError(t, err)
@@ -113,7 +114,7 @@ func TestExtractReferral_OutOfBailiwick(t *testing.T) {
 	nsDataLen := off - nsDataStart
 	binary.BigEndian.PutUint16(buf[rdlenPos:rdlenPos+2], uint16(nsDataLen))
 
-	// Additional section: ns.evil.com A 1.2.3.4 (attack glue)
+	// Additional section: ns.evil.com A 1.2.3.4 (out-of-bailiwick, should be ignored)
 	off, _ = dns.EncodeName(buf, off, "ns.evil.com")
 	binary.BigEndian.PutUint16(buf[off:off+2], dns.TypeA)
 	off += 2
@@ -134,7 +135,8 @@ func TestExtractReferral_OutOfBailiwick(t *testing.T) {
 		NSCount: 1,
 		ARCount: 1,
 	}
-	dns.WriteHeader(buf, header)
+	err := dns.WriteHeader(buf, header)
+	require.NoError(t, err)
 
 	msg, err := dns.ReadMessage(buf[:off])
 	require.NoError(t, err)
@@ -146,5 +148,5 @@ func TestExtractReferral_OutOfBailiwick(t *testing.T) {
 	require.Equal(t, "ns.evil.com", nsNames[0])
 
 	// Should have NO glue IPs (out-of-bailiwick should be ignored)
-	require.Len(t, glueIPs, 0, "Out-of-bailiwick glue should be rejected")
+	require.Len(t, glueIPs, 0)
 }
