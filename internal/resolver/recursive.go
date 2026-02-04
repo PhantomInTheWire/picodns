@@ -436,7 +436,11 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 }
 
 func buildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
-	buf := make([]byte, dns.MaxMessageSize)
+	labelCount := strings.Count(name, ".") + 1
+	if strings.HasSuffix(name, ".") {
+		labelCount--
+	}
+	buf := make([]byte, dns.HeaderLen+len(name)+labelCount+1+4)
 
 	header := dns.Header{
 		ID:      id,
