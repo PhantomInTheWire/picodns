@@ -95,9 +95,15 @@ func (c *Cached) setCache(q dns.Question, resp []byte, ttl time.Duration) {
 func extractTTL(msg dns.Message, q dns.Question) (time.Duration, bool) {
 	if (msg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
 		for _, rr := range msg.Authorities {
-			if rr.Type == dns.TypeSOA && len(rr.Data) >= 20 {
-				_, nextM, _ := dns.DecodeName(rr.Data, 0)
-				_, nextR, _ := dns.DecodeName(rr.Data, nextM)
+			if rr.Type == dns.TypeSOA && len(rr.Data) >= 22 {
+				_, nextM, err := dns.DecodeName(rr.Data, 0)
+				if err != nil {
+					continue
+				}
+				_, nextR, err := dns.DecodeName(rr.Data, nextM)
+				if err != nil {
+					continue
+				}
 				if len(rr.Data) >= nextR+20 {
 					return time.Duration(binary.BigEndian.Uint32(rr.Data[nextR+16:nextR+20])) * time.Second, true
 				}
