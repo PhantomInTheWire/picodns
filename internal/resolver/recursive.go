@@ -78,8 +78,7 @@ func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 
 	q := reqMsg.Questions[0]
 
-	seenCnames := make(map[string]struct{})
-	return r.resolveIterative(ctx, req, q.Name, 0, seenCnames)
+	return r.resolveIterative(ctx, req, q.Name, 0, nil)
 }
 
 // resolveIterative performs iterative DNS resolution starting from root servers.
@@ -126,6 +125,9 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 						}
 
 						cnameKey := name + "->" + cnameTarget
+						if seenCnames == nil {
+							seenCnames = make(map[string]struct{})
+						}
 						if _, seen := seenCnames[cnameKey]; seen {
 							return nil, ErrCnameLoop
 						}
