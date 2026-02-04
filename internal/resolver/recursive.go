@@ -335,11 +335,7 @@ func isSubdomain(child, parent string) bool {
 		return true
 	}
 
-	if !strings.HasSuffix(child, "."+parent) {
-		return false
-	}
-
-	return true
+	return strings.HasSuffix(child, "."+parent)
 }
 
 // extractReferral extracts nameserver names and their associated glue record IPs from a DNS message.
