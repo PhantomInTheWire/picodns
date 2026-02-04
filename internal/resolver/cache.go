@@ -14,12 +14,6 @@ type Resolver interface {
 	Resolve(ctx context.Context, req []byte) ([]byte, error)
 }
 
-// cachedResponse stores a raw DNS response with metadata
-type cachedResponse struct {
-	data    []byte // Raw response bytes (transaction ID will be patched)
-	expires time.Time
-}
-
 // Cached wraps a resolver with DNS response caching
 type Cached struct {
 	cache    *cache.Cache
