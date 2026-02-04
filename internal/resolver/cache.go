@@ -58,19 +58,13 @@ func (c *Cached) getCached(q dns.Question, queryID uint16) ([]byte, bool) {
 	}
 
 	cachedData, ok := c.cache.Get(q)
-	if !ok || len(cachedData) < 10 {
+	if !ok || len(cachedData) < 2 {
 		return nil, false
 	}
 
-	// Parse expiry time (first 8 bytes) and check if expired
-	expires := time.Unix(int64(binary.BigEndian.Uint64(cachedData[0:8])), 0)
-	if time.Now().After(expires) {
-		return nil, false
-	}
-
-	// Copy the cached response data (after expiry header)
-	resp := make([]byte, len(cachedData)-8)
-	copy(resp, cachedData[8:])
+	// Copy the cached response data
+	resp := make([]byte, len(cachedData))
+	copy(resp, cachedData)
 
 	// Patch the transaction ID
 	binary.BigEndian.PutUint16(resp[0:2], queryID)
@@ -84,12 +78,8 @@ func (c *Cached) setCache(q dns.Question, resp []byte, ttl time.Duration) {
 		return
 	}
 
-	// Store: [8 bytes expiry][raw response]
-	data := make([]byte, 8+len(resp))
-	binary.BigEndian.PutUint64(data[0:8], uint64(time.Now().Add(ttl).Unix()))
-	copy(data[8:], resp)
-
-	c.cache.Set(q, data, ttl)
+	// Store raw response directly; cache handles expiry internally
+	c.cache.Set(q, resp, ttl)
 }
 
 func extractTTL(msg dns.Message, q dns.Question) (time.Duration, bool) {
