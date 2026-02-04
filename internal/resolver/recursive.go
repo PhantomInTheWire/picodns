@@ -44,9 +44,9 @@ var (
 )
 
 func secureRandUint16() uint16 {
-	b := make([]byte, 2)
-	_, _ = rand.Read(b)
-	return binary.BigEndian.Uint16(b)
+	var b [2]byte
+	_, _ = rand.Read(b[:])
+	return binary.BigEndian.Uint16(b[:])
 }
 
 type Recursive struct {
