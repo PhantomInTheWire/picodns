@@ -45,7 +45,7 @@ var (
 
 func secureRandUint16() uint16 {
 	b := make([]byte, 2)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return binary.BigEndian.Uint16(b)
 }
 
