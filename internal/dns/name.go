@@ -98,18 +98,22 @@ func EncodeName(buf []byte, off int, name string) (int, error) {
 		return off + 1, nil
 	}
 
-	labels := strings.Split(name, ".")
 	i := off
-	for _, label := range labels {
-		if len(label) > maxLabelLen {
-			return 0, ErrLabelTooLong
+	start := 0
+	for j := 0; j <= len(name); j++ {
+		if j == len(name) || name[j] == '.' {
+			labelLen := j - start
+			if labelLen > maxLabelLen {
+				return 0, ErrLabelTooLong
+			}
+			if i+1+labelLen > len(buf) {
+				return 0, ErrShortBuffer
+			}
+			buf[i] = byte(labelLen)
+			copy(buf[i+1:i+1+labelLen], name[start:j])
+			i += 1 + labelLen
+			start = j + 1
 		}
-		if i+1+len(label) > len(buf) {
-			return 0, ErrShortBuffer
-		}
-		buf[i] = byte(len(label))
-		copy(buf[i+1:i+1+len(label)], label)
-		i += 1 + len(label)
 	}
 	if i >= len(buf) {
 		return 0, ErrShortBuffer
