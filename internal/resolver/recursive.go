@@ -336,11 +336,7 @@ func joinLabels(labels []string) string {
 	if len(labels) == 0 {
 		return "."
 	}
-	result := labels[0]
-	for i := 1; i < len(labels); i++ {
-		result += "." + labels[i]
-	}
-	return result
+	return strings.Join(labels, ".")
 }
 
 func trimTrailingDot(s string) string {
