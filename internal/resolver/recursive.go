@@ -173,50 +173,13 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 }
 
 func (r *Recursive) queryServer(ctx context.Context, server string, req []byte) ([]byte, error) {
-	raddr, err := net.ResolveUDPAddr("udp", server)
+	resp, needsTCP, err := queryUDP(ctx, server, req, r.timeout, &r.pool, true)
 	if err != nil {
 		return nil, err
 	}
-
-	conn, err := net.DialUDP("udp", nil, raddr)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = conn.Close() }()
-
-	deadline := time.Now().Add(r.timeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
-	if err := conn.SetDeadline(deadline); err != nil {
-		return nil, err
-	}
-
-	if _, err := conn.Write(req); err != nil {
-		return nil, err
-	}
-
-	bufPtr := r.pool.Get().(*[]byte)
-	defer r.pool.Put(bufPtr)
-	buf := *bufPtr
-
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := make([]byte, n)
-	copy(resp, buf[:n])
-
-	if err := dns.ValidateResponse(req, resp); err != nil {
-		return nil, err
-	}
-
-	header, err := dns.ReadHeader(resp)
-	if err == nil && (header.Flags&dns.FlagTC) != 0 {
+	if needsTCP {
 		return r.queryServerTCP(ctx, server, req)
 	}
-
 	return resp, nil
 }
 

@@ -3,11 +3,8 @@ package resolver
 import (
 	"context"
 	"errors"
-	"net"
 	"sync"
 	"time"
-
-	"picodns/internal/dns"
 )
 
 var (
@@ -51,45 +48,21 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 }
 
 func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]byte, error) {
-	raddr, err := net.ResolveUDPAddr("udp", upstream)
+	timeout := u.timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	resp, needsTCP, err := queryUDP(ctx, upstream, req, timeout, &u.pool, false)
 	if err != nil {
 		return nil, err
 	}
-
-	conn, err := net.DialUDP("udp", nil, raddr)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = conn.Close() }()
-
-	deadline := u.getDeadline(ctx)
-	_ = conn.SetDeadline(deadline)
-
-	if _, err := conn.Write(req); err != nil {
-		return nil, err
-	}
-
-	bufPtr := u.pool.Get().(*[]byte)
-	defer u.pool.Put(bufPtr)
-	buf := *bufPtr
-
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-	resp := make([]byte, n)
-	copy(resp, buf[:n])
-
-	header, err := dns.ReadHeader(resp)
-	if err == nil && (header.Flags&dns.FlagTC) != 0 {
+	if needsTCP {
 		return u.queryTCP(ctx, upstream, req)
 	}
-
 	return resp, nil
 }
 
 func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([]byte, error) {
-	// Calculate effective timeout from context deadline
 	timeout := u.timeout
 	if timeout <= 0 {
 		timeout = 5 * time.Second
@@ -100,15 +73,4 @@ func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([
 		}
 	}
 	return tcpQuery(ctx, upstream, req, timeout, false)
-}
-
-func (u *Upstream) getDeadline(ctx context.Context) time.Time {
-	if deadline, ok := ctx.Deadline(); ok {
-		return deadline
-	}
-	timeout := u.timeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	return time.Now().Add(timeout)
 }
