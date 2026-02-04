@@ -96,7 +96,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 	servers := rootServers
 	labels := splitLabels(name)
 
-	// Iterate from most specific zone to root (right to left in domain name)
 	for i := len(labels); i >= 0; i-- {
 		zone := joinLabels(labels[i:])
 		if zone != "." {
@@ -117,7 +116,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 			if len(respMsg.Answers) > 0 {
 				for _, ans := range respMsg.Answers {
 					if ans.Type == dns.TypeCNAME {
-						// Verify CNAME matches the query name to prevent following unrelated CNAMEs
 						if !strings.EqualFold(ans.Name, name) && !strings.EqualFold(ans.Name, name+".") {
 							continue
 						}
@@ -354,8 +352,6 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 		if rr.Type == dns.TypeNS {
 			nsOwner := strings.ToLower(trimTrailingDot(rr.Name))
 
-			// For root zone (zoneNorm is empty), accept all NS records
-			// Otherwise check bailiwick
 			if zoneNorm != "" {
 				if !isSubdomain(nsOwner, zoneNorm) && nsOwner != zoneNorm {
 					continue
@@ -378,12 +374,10 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 
 	var glueIPs []string
 	for _, nsName := range nsNames {
-		// Only accept glue if NS name is in-bailiwick of the delegated zone
-		// For root zone (zoneNorm is empty after trimming "."), accept all glue
 		if zoneNorm != "" {
 			nsNameNorm := strings.ToLower(trimTrailingDot(nsName))
 			if !isSubdomain(nsNameNorm, zoneNorm) {
-				continue // Out-of-bailiwick glue ignored
+				continue
 			}
 		}
 		if ips, ok := nsIPs[nsName]; ok {
