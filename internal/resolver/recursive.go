@@ -112,7 +112,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 				for _, ans := range respMsg.Answers {
 					if ans.Type == dns.TypeCNAME {
 						// Verify CNAME matches the query name to prevent following unrelated CNAMEs
-						if ans.Name != name && ans.Name != name+"." {
+						if !strings.EqualFold(ans.Name, name) && !strings.EqualFold(ans.Name, name+".") {
 							continue
 						}
 
