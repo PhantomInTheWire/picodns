@@ -277,7 +277,7 @@ func splitLabels(name string) []string {
 	if name == "" || name == "." {
 		return nil
 	}
-	name = trimTrailingDot(name)
+	name = strings.TrimSuffix(name, ".")
 
 	var labels []string
 	start := 0
@@ -302,13 +302,6 @@ func joinLabels(labels []string) string {
 	return strings.Join(labels, ".")
 }
 
-func trimTrailingDot(s string) string {
-	if len(s) > 0 && s[len(s)-1] == '.' {
-		return s[:len(s)-1]
-	}
-	return s
-}
-
 // extractNameFromData extracts a domain name from resource record data,
 // using the full message buffer to resolve compression pointers.
 func extractNameFromData(fullMsg []byte, dataOffset int) string {
@@ -328,8 +321,8 @@ func isSubdomain(child, parent string) bool {
 	if parent == "." {
 		return true
 	}
-	child = strings.ToLower(trimTrailingDot(child))
-	parent = strings.ToLower(trimTrailingDot(parent))
+	child = strings.ToLower(strings.TrimSuffix(child, "."))
+	parent = strings.ToLower(strings.TrimSuffix(parent, "."))
 
 	if child == parent {
 		return true
@@ -344,11 +337,11 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 	var nsNames []string
 	nsIPs := make(map[string][]string)
 
-	zoneNorm := strings.ToLower(trimTrailingDot(zone))
+	zoneNorm := strings.ToLower(strings.TrimSuffix(zone, "."))
 
 	for _, rr := range msg.Authorities {
 		if rr.Type == dns.TypeNS {
-			nsOwner := strings.ToLower(trimTrailingDot(rr.Name))
+			nsOwner := strings.ToLower(strings.TrimSuffix(rr.Name, "."))
 
 			if zoneNorm != "" {
 				if !isSubdomain(nsOwner, zoneNorm) && nsOwner != zoneNorm {
@@ -373,7 +366,7 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 	var glueIPs []string
 	for _, nsName := range nsNames {
 		if zoneNorm != "" {
-			nsNameNorm := strings.ToLower(trimTrailingDot(nsName))
+			nsNameNorm := strings.ToLower(strings.TrimSuffix(nsName, "."))
 			if !isSubdomain(nsNameNorm, zoneNorm) {
 				continue
 			}
