@@ -121,10 +121,11 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 							continue
 						}
 
-						if _, seen := seenCnames[cnameTarget]; seen {
+						cnameKey := name + "->" + cnameTarget
+						if _, seen := seenCnames[cnameKey]; seen {
 							return nil, ErrCnameLoop
 						}
-						seenCnames[cnameTarget] = struct{}{}
+						seenCnames[cnameKey] = struct{}{}
 
 						newReq, err := buildQuery(origMsg.Header.ID, cnameTarget, q.Type, q.Class)
 						if err != nil {
