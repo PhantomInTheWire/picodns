@@ -2,10 +2,10 @@ package resolver
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"io"
-	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -42,6 +42,12 @@ var (
 	ErrCnameLoop     = errors.New("recursive resolver: CNAME loop detected")
 	ErrNoRootServers = errors.New("recursive resolver: no root servers available")
 )
+
+func secureRandUint16() uint16 {
+	b := make([]byte, 2)
+	rand.Read(b)
+	return binary.BigEndian.Uint16(b)
+}
 
 type Recursive struct {
 	timeout time.Duration
@@ -275,7 +281,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 
 	var ips []string
 	for _, nsName := range nsNames {
-		req, err := buildQuery(uint16(rand.Intn(65536)), nsName, dns.TypeA, dns.ClassIN)
+		req, err := buildQuery(secureRandUint16(), nsName, dns.TypeA, dns.ClassIN)
 		if err != nil {
 			continue
 		}
