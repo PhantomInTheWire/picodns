@@ -38,6 +38,12 @@ const (
 	ClassIN   uint16 = 1
 
 	MaxMessageSize = 4096
+
+	// Compression pointer constants
+	CompressionMask    = 0xC0 // Top 2 bits indicate compression pointer
+	CompressionFlag    = 0xC0 // Full value indicating compression pointer
+	PointerMask        = 0x3F // Bottom 6 bits of first byte + second byte form offset
+	QuestionNameOffset = 0x0C // Offset of question name in DNS message (after header)
 )
 
 type Header struct {

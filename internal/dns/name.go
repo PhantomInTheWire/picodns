@@ -32,13 +32,6 @@ func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) ([]str
 	if off >= len(buf) {
 		return nil, 0, ErrShortBuffer
 	}
-	if visited == nil {
-		visited = map[int]struct{}{}
-	}
-	if _, ok := visited[off]; ok {
-		return nil, 0, ErrBadPointer
-	}
-	visited[off] = struct{}{}
 
 	labels := make([]string, 0, 8)
 	i := off
@@ -52,11 +45,19 @@ func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) ([]str
 			break
 		}
 
-		if length&0xC0 == 0xC0 {
+		if length&CompressionMask == CompressionFlag {
 			if i+1 >= len(buf) {
 				return nil, 0, ErrShortBuffer
 			}
-			ptr := int(length&0x3F)<<8 | int(buf[i+1])
+			// Lazy allocation: only create map when we encounter first compression pointer
+			if visited == nil {
+				visited = make(map[int]struct{}, 4)
+			}
+			ptr := int(length&PointerMask)<<8 | int(buf[i+1])
+			if _, seen := visited[ptr]; seen {
+				return nil, 0, ErrBadPointer
+			}
+			visited[ptr] = struct{}{}
 			pointedLabels, _, err := decodeName(buf, ptr, depth+1, visited)
 			if err != nil {
 				return nil, 0, err

@@ -2,9 +2,7 @@ package resolver
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -14,7 +12,6 @@ import (
 
 var (
 	ErrNoUpstreams = errors.New("resolver: no upstreams configured")
-	maxTCPSize     = 65535
 )
 
 type Upstream struct {
@@ -92,41 +89,17 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 }
 
 func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([]byte, error) {
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", upstream)
-	if err != nil {
-		return nil, err
+	// Calculate effective timeout from context deadline
+	timeout := u.timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
 	}
-	defer func() { _ = conn.Close() }()
-
-	deadline := u.getDeadline(ctx)
-	_ = conn.SetDeadline(deadline)
-
-	reqLen := uint16(len(req))
-	var lenBuf [2]byte
-	binary.BigEndian.PutUint16(lenBuf[:], reqLen)
-
-	if _, err := conn.Write(lenBuf[:]); err != nil {
-		return nil, err
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < timeout {
+			timeout = remaining
+		}
 	}
-	if _, err := conn.Write(req); err != nil {
-		return nil, err
-	}
-
-	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
-		return nil, err
-	}
-	respLen := int(binary.BigEndian.Uint16(lenBuf[:]))
-	if respLen > maxTCPSize {
-		return nil, errors.New("resolver: tcp response too large")
-	}
-
-	resp := make([]byte, respLen)
-	if _, err := io.ReadFull(conn, resp); err != nil {
-		return nil, err
-	}
-
-	return resp, nil
+	return tcpQuery(ctx, upstream, req, timeout, false)
 }
 
 func (u *Upstream) getDeadline(ctx context.Context) time.Time {

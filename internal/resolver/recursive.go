@@ -111,6 +111,11 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 			if len(respMsg.Answers) > 0 {
 				for _, ans := range respMsg.Answers {
 					if ans.Type == dns.TypeCNAME {
+						// Verify CNAME matches the query name to prevent following unrelated CNAMEs
+						if ans.Name != name && ans.Name != name+"." {
+							continue
+						}
+
 						cnameTarget := extractNameFromData(resp, ans.DataOffset)
 						if cnameTarget == "" {
 							continue
@@ -209,6 +214,12 @@ func (r *Recursive) queryServer(ctx context.Context, server string, req []byte) 
 }
 
 func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byte) ([]byte, error) {
+	return tcpQuery(ctx, server, req, r.timeout, true)
+}
+
+// tcpQuery performs a TCP DNS query to the given server.
+// If validate is true, it validates the response against the request.
+func tcpQuery(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", server)
 	if err != nil {
@@ -216,7 +227,7 @@ func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byt
 	}
 	defer func() { _ = conn.Close() }()
 
-	deadline := time.Now().Add(r.timeout)
+	deadline := time.Now().Add(timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
@@ -239,17 +250,16 @@ func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byt
 		return nil, err
 	}
 	respLen := int(binary.BigEndian.Uint16(lenBuf[:]))
-	if respLen > 65535 {
-		return nil, errors.New("recursive resolver: response too large")
-	}
 
 	resp := make([]byte, respLen)
 	if _, err := io.ReadFull(conn, resp); err != nil {
 		return nil, err
 	}
 
-	if err := dns.ValidateResponse(req, resp); err != nil {
-		return nil, err
+	if validate {
+		if err := dns.ValidateResponse(req, resp); err != nil {
+			return nil, err
+		}
 	}
 
 	return resp, nil

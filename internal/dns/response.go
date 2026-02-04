@@ -50,8 +50,8 @@ func BuildResponse(req []byte, answers []Answer, rcode uint16) ([]byte, error) {
 			if idx+2 >= len(resp) {
 				return nil, ErrShortBuffer
 			}
-			resp[idx] = 0xC0
-			resp[idx+1] = 0x0C
+			resp[idx] = CompressionFlag
+			resp[idx+1] = QuestionNameOffset
 			idx += 2
 		} else {
 			idx, err = EncodeName(resp, idx, ans.Name)
