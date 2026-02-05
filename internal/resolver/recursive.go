@@ -98,7 +98,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 	for i := len(labels); i >= 0; i-- {
 		zone := joinLabels(labels[i:])
 		if zone != "." {
-			zone = dns.Question{Name: zone, Type: q.Type, Class: q.Class}.Normalize().Name
+			zone = normalizeName(zone)
 		}
 
 		for _, server := range servers {
