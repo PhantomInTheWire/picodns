@@ -33,7 +33,10 @@ func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) ([]str
 		return nil, 0, ErrShortBuffer
 	}
 
-	labels := make([]string, 0, 8)
+	// Stack-allocated array for up to 16 labels (covers 99.9% of names)
+	var stackLabels [16]string
+	labels := stackLabels[:0]
+
 	i := off
 	for {
 		if i >= len(buf) {
@@ -74,7 +77,14 @@ func decodeName(buf []byte, off int, depth int, visited map[int]struct{}) ([]str
 			return nil, 0, ErrShortBuffer
 		}
 
-		labels = append(labels, string(buf[i+1:i+1+length]))
+		if len(labels) < cap(labels) {
+			labels = append(labels, string(buf[i+1:i+1+length]))
+		} else {
+			heapLabels := make([]string, len(labels), len(labels)+1)
+			copy(heapLabels, labels)
+			heapLabels = append(heapLabels, string(buf[i+1:i+1+length]))
+			labels = heapLabels
+		}
 		i += 1 + length
 	}
 
