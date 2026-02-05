@@ -66,14 +66,20 @@ func (u *Upstream) query(ctx context.Context, upstream *net.UDPAddr, req []byte)
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
-	resp, needsTCP, err := queryUDP(ctx, upstream, req, timeout, &u.pool, false)
+	resp, bufPtr, needsTCP, err := queryUDP(ctx, upstream, req, timeout, &u.pool, false)
 	if err != nil {
 		return nil, err
 	}
+	defer u.pool.Put(bufPtr)
+
 	if needsTCP {
 		return u.queryTCP(ctx, upstream, req)
 	}
-	return resp, nil
+
+	// Make a copy since the caller expects to own the response
+	respCopy := make([]byte, len(resp))
+	copy(respCopy, resp)
+	return respCopy, nil
 }
 
 func (u *Upstream) queryTCP(ctx context.Context, upstream *net.UDPAddr, req []byte) ([]byte, error) {
