@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"strings"
+	"sync"
 )
 
 var (
@@ -15,6 +16,18 @@ var (
 	ErrNotResponse  = errors.New("dns: not a response")
 	ErrQDMismatch   = errors.New("dns: question section mismatch")
 )
+
+// messagePool is a pool of reusable Message structs
+var messagePool = sync.Pool{
+	New: func() interface{} {
+		return &Message{
+			Questions:   make([]Question, 0, 4),
+			Answers:     make([]ResourceRecord, 0, 8),
+			Authorities: make([]ResourceRecord, 0, 4),
+			Additionals: make([]ResourceRecord, 0, 4),
+		}
+	},
+}
 
 const (
 	FlagQR     = 0x8000
@@ -105,56 +118,94 @@ type Message struct {
 	Additionals []ResourceRecord
 }
 
+// Reset clears the message for reuse without deallocating slices
+func (m *Message) Reset() {
+	m.Header = Header{}
+	m.Questions = m.Questions[:0]
+	m.Answers = m.Answers[:0]
+	m.Authorities = m.Authorities[:0]
+	m.Additionals = m.Additionals[:0]
+}
+
+// Release returns the message to the pool for reuse
+func (m *Message) Release() {
+	m.Reset()
+	messagePool.Put(m)
+}
+
+// AcquireMessage gets a message from the pool
+func AcquireMessage() *Message {
+	return messagePool.Get().(*Message)
+}
+
 func ReadMessage(buf []byte) (Message, error) {
-	if len(buf) < HeaderLen {
-		return Message{}, ErrShortBuffer
-	}
-	header, err := ReadHeader(buf)
+	msg, err := ReadMessagePooled(buf)
 	if err != nil {
 		return Message{}, err
 	}
-
-	msg := Message{
-		Header: header,
+	// Copy to non-pooled Message for backward compatibility
+	result := Message{
+		Header:      msg.Header,
+		Questions:   append([]Question(nil), msg.Questions...),
+		Answers:     append([]ResourceRecord(nil), msg.Answers...),
+		Authorities: append([]ResourceRecord(nil), msg.Authorities...),
+		Additionals: append([]ResourceRecord(nil), msg.Additionals...),
 	}
+	msg.Release()
+	return result, nil
+}
+
+// ReadMessagePooled parses a DNS message using a pooled Message struct.
+// The caller MUST call msg.Release() when done to return it to the pool.
+func ReadMessagePooled(buf []byte) (*Message, error) {
+	if len(buf) < HeaderLen {
+		return nil, ErrShortBuffer
+	}
+	header, err := ReadHeader(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := AcquireMessage()
+	msg.Header = header
 
 	off := HeaderLen
 
-	msg.Questions = make([]Question, 0, header.QDCount)
 	for i := 0; i < int(header.QDCount); i++ {
 		q, next, err := ReadQuestion(buf, off)
 		if err != nil {
-			return Message{}, err
+			msg.Release()
+			return nil, err
 		}
 		msg.Questions = append(msg.Questions, q)
 		off = next
 	}
 
-	msg.Answers = make([]ResourceRecord, 0, header.ANCount)
 	for i := 0; i < int(header.ANCount); i++ {
 		rr, next, err := ReadResourceRecord(buf, off)
 		if err != nil {
-			return Message{}, err
+			msg.Release()
+			return nil, err
 		}
 		msg.Answers = append(msg.Answers, rr)
 		off = next
 	}
 
-	msg.Authorities = make([]ResourceRecord, 0, header.NSCount)
 	for i := 0; i < int(header.NSCount); i++ {
 		rr, next, err := ReadResourceRecord(buf, off)
 		if err != nil {
-			return Message{}, err
+			msg.Release()
+			return nil, err
 		}
 		msg.Authorities = append(msg.Authorities, rr)
 		off = next
 	}
 
-	msg.Additionals = make([]ResourceRecord, 0, header.ARCount)
 	for i := 0; i < int(header.ARCount); i++ {
 		rr, next, err := ReadResourceRecord(buf, off)
 		if err != nil {
-			return Message{}, err
+			msg.Release()
+			return nil, err
 		}
 		msg.Additionals = append(msg.Additionals, rr)
 		off = next
