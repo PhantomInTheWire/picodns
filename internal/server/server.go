@@ -94,14 +94,7 @@ func (s *Server) Start(ctx context.Context) error {
 							s.pool.Put(dataPtr)
 						}()
 
-						reqCtx := ctx
-						if s.cfg.Timeout > 0 {
-							var cancel context.CancelFunc
-							reqCtx, cancel = context.WithTimeout(ctx, s.cfg.Timeout)
-							defer cancel()
-						}
-
-						resp, err := s.resolver.Resolve(reqCtx, (*dataPtr)[:n])
+						resp, err := s.resolver.Resolve(ctx, (*dataPtr)[:n])
 						if err != nil {
 							s.HandlerErrors.Add(1)
 							s.logger.Error("handler error", "error", err)
