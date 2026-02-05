@@ -14,11 +14,11 @@ var (
 
 type Upstream struct {
 	upstreams []*net.UDPAddr
-	timeout   time.Duration
 	pool      sync.Pool
+	connPool  *connPool
 }
 
-func NewUpstream(upstreamAddrs []string, timeout time.Duration) (*Upstream, error) {
+func NewUpstream(upstreamAddrs []string) (*Upstream, error) {
 	if len(upstreamAddrs) == 0 {
 		return nil, ErrNoUpstreams
 	}
@@ -34,7 +34,7 @@ func NewUpstream(upstreamAddrs []string, timeout time.Duration) (*Upstream, erro
 
 	u := &Upstream{
 		upstreams: resolved,
-		timeout:   timeout,
+		connPool:  newConnPool(),
 	}
 	u.pool = sync.Pool{
 		New: func() any {
@@ -62,11 +62,7 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 }
 
 func (u *Upstream) query(ctx context.Context, upstream *net.UDPAddr, req []byte) ([]byte, error) {
-	timeout := u.timeout
-	if timeout <= 0 {
-		timeout = defaultTimeout
-	}
-	resp, bufPtr, needsTCP, err := queryUDP(ctx, upstream, req, timeout, &u.pool, false)
+	resp, bufPtr, needsTCP, err := queryUDP(ctx, upstream, req, defaultTimeout, &u.pool, u.connPool, false)
 	if err != nil {
 		return nil, err
 	}
@@ -83,10 +79,7 @@ func (u *Upstream) query(ctx context.Context, upstream *net.UDPAddr, req []byte)
 }
 
 func (u *Upstream) queryTCP(ctx context.Context, upstream *net.UDPAddr, req []byte) ([]byte, error) {
-	timeout := u.timeout
-	if timeout <= 0 {
-		timeout = defaultTimeout
-	}
+	timeout := defaultTimeout
 	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining < timeout {
 			timeout = remaining

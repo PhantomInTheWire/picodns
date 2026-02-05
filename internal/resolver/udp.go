@@ -10,12 +10,24 @@ import (
 )
 
 // queryUDP performs a UDP DNS query. The caller must call pool.Put(bufPtr) when done with resp.
-func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, pool *sync.Pool, validate bool) (resp []byte, bufPtr *[]byte, needsTCP bool, err error) {
-	conn, err := net.DialUDP("udp", nil, raddr)
-	if err != nil {
-		return nil, nil, false, err
+// If cp is nil, a new connection is created for this query.
+func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, pool *sync.Pool, cp *connPool, validate bool) (resp []byte, bufPtr *[]byte, needsTCP bool, err error) {
+	var conn *net.UDPConn
+	var release func()
+
+	if cp != nil {
+		conn, release, err = cp.get()
+		if err != nil {
+			return nil, nil, false, err
+		}
+		defer release()
+	} else {
+		conn, err = net.ListenUDP("udp", nil)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		defer conn.Close()
 	}
-	defer func() { _ = conn.Close() }()
 
 	deadline := time.Now().Add(timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
@@ -25,14 +37,14 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 		return nil, nil, false, err
 	}
 
-	if _, err := conn.Write(req); err != nil {
+	if _, err := conn.WriteTo(req, raddr); err != nil {
 		return nil, nil, false, err
 	}
 
 	bufPtr = pool.Get().(*[]byte)
 	buf := *bufPtr
 
-	n, err := conn.Read(buf)
+	n, _, err := conn.ReadFrom(buf)
 	if err != nil {
 		pool.Put(bufPtr)
 		return nil, nil, false, err
@@ -63,7 +75,7 @@ func queryUDPString(ctx context.Context, server string, req []byte, timeout time
 	if err != nil {
 		return nil, false, err
 	}
-	resp, bufPtr, needsTCP, err := queryUDP(ctx, raddr, req, timeout, pool, validate)
+	resp, bufPtr, needsTCP, err := queryUDP(ctx, raddr, req, timeout, pool, nil, validate)
 	if err != nil {
 		return nil, false, err
 	}

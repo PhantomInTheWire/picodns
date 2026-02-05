@@ -32,10 +32,10 @@ func main() {
 	var res resolver.Resolver
 	if cfg.Recursive || len(cfg.Upstreams) == 0 {
 		logger.Info("using recursive resolver")
-		res = resolver.NewCached(cacheStore, resolver.NewRecursive(cfg.Timeout))
+		res = resolver.NewCached(cacheStore, resolver.NewRecursive())
 	} else {
 		logger.Info("using upstream resolver", "upstreams", cfg.Upstreams)
-		upstream, err := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
+		upstream, err := resolver.NewUpstream(cfg.Upstreams)
 		if err != nil {
 			logger.Error("failed to create upstream resolver", "error", err)
 			os.Exit(1)

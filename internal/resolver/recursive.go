@@ -33,6 +33,12 @@ var rootServers = []string{
 const (
 	maxRecursionDepth = 32
 	defaultTimeout    = 5 * time.Second
+
+	// ConnPoolIdleTimeout is how long idle connections are kept in the pool
+	ConnPoolIdleTimeout = 30 * time.Second
+
+	// ConnPoolMaxConns is the maximum number of connections in the pool
+	ConnPoolMaxConns = 10
 )
 
 var (
@@ -50,17 +56,11 @@ func secureRandUint16() uint16 {
 }
 
 type Recursive struct {
-	timeout time.Duration
-	pool    sync.Pool
+	pool sync.Pool
 }
 
-func NewRecursive(timeout time.Duration) *Recursive {
-	if timeout <= 0 {
-		timeout = defaultTimeout
-	}
-	r := &Recursive{
-		timeout: timeout,
-	}
+func NewRecursive() *Recursive {
+	r := &Recursive{}
 	r.pool = sync.Pool{
 		New: func() any {
 			b := make([]byte, 4096)
@@ -173,7 +173,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 }
 
 func (r *Recursive) queryServer(ctx context.Context, server string, req []byte) ([]byte, error) {
-	resp, needsTCP, err := queryUDPString(ctx, server, req, r.timeout, &r.pool, true)
+	resp, needsTCP, err := queryUDPString(ctx, server, req, defaultTimeout, &r.pool, true)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (r *Recursive) queryServer(ctx context.Context, server string, req []byte) 
 }
 
 func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byte) ([]byte, error) {
-	return tcpQuery(ctx, server, req, r.timeout, true)
+	return tcpQuery(ctx, server, req, defaultTimeout, true)
 }
 
 // tcpQuery performs a TCP DNS query to the given server.

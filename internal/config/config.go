@@ -3,14 +3,12 @@ package config
 import (
 	"flag"
 	"strings"
-	"time"
 )
 
 type Config struct {
 	ListenAddrs []string
 	Upstreams   []string
 	Workers     int
-	Timeout     time.Duration
 	CacheSize   int
 	LogLevel    string
 	Recursive   bool
@@ -21,7 +19,6 @@ func Default() Config {
 		ListenAddrs: []string{":53"},
 		Upstreams:   []string{"1.1.1.1:53"},
 		Workers:     128,
-		Timeout:     5 * time.Second,
 		CacheSize:   10000,
 		LogLevel:    "info",
 	}
@@ -37,7 +34,6 @@ func BindFlags(cfg *Config) {
 	flag.StringVar(&listen, "listen", strings.Join(cfg.ListenAddrs, ","), "comma-separated listen addresses")
 	flag.StringVar(&upstreams, "upstreams", strings.Join(cfg.Upstreams, ","), "comma-separated upstreams")
 	flag.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker pool size")
-	flag.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "upstream timeout")
 	flag.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "max cache entries")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level (debug, info, warn, error)")
 	flag.BoolVar(&cfg.Recursive, "recursive", cfg.Recursive, "use recursive resolution instead of forwarding to upstreams")
