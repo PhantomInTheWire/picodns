@@ -87,7 +87,6 @@ func TestE2EBackpressure(t *testing.T) {
 	cfg := config.Default()
 	cfg.Upstreams = []string{upstreamAddr}
 	cfg.Workers = 1
-	cfg.QueueSize = 5
 	cfg.Timeout = 1 * time.Second
 
 	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
