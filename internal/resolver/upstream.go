@@ -50,7 +50,7 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]byte, error) {
 	timeout := u.timeout
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = defaultTimeout
 	}
 	resp, needsTCP, err := queryUDP(ctx, upstream, req, timeout, &u.pool, false)
 	if err != nil {
@@ -65,7 +65,7 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([]byte, error) {
 	timeout := u.timeout
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = defaultTimeout
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining < timeout {
