@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"time"
 )
@@ -12,14 +13,27 @@ var (
 )
 
 type Upstream struct {
-	upstreams []string
+	upstreams []*net.UDPAddr
 	timeout   time.Duration
 	pool      sync.Pool
 }
 
-func NewUpstream(upstreams []string, timeout time.Duration) *Upstream {
+func NewUpstream(upstreamAddrs []string, timeout time.Duration) (*Upstream, error) {
+	if len(upstreamAddrs) == 0 {
+		return nil, ErrNoUpstreams
+	}
+
+	resolved := make([]*net.UDPAddr, 0, len(upstreamAddrs))
+	for _, addr := range upstreamAddrs {
+		raddr, err := net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return nil, err
+		}
+		resolved = append(resolved, raddr)
+	}
+
 	u := &Upstream{
-		upstreams: append([]string(nil), upstreams...),
+		upstreams: resolved,
 		timeout:   timeout,
 	}
 	u.pool = sync.Pool{
@@ -28,7 +42,7 @@ func NewUpstream(upstreams []string, timeout time.Duration) *Upstream {
 			return &b
 		},
 	}
-	return u
+	return u, nil
 }
 
 func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
@@ -47,7 +61,7 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
 	return nil, lastErr
 }
 
-func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]byte, error) {
+func (u *Upstream) query(ctx context.Context, upstream *net.UDPAddr, req []byte) ([]byte, error) {
 	timeout := u.timeout
 	if timeout <= 0 {
 		timeout = defaultTimeout
@@ -62,7 +76,7 @@ func (u *Upstream) query(ctx context.Context, upstream string, req []byte) ([]by
 	return resp, nil
 }
 
-func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([]byte, error) {
+func (u *Upstream) queryTCP(ctx context.Context, upstream *net.UDPAddr, req []byte) ([]byte, error) {
 	timeout := u.timeout
 	if timeout <= 0 {
 		timeout = defaultTimeout
@@ -72,5 +86,5 @@ func (u *Upstream) queryTCP(ctx context.Context, upstream string, req []byte) ([
 			timeout = remaining
 		}
 	}
-	return tcpQuery(ctx, upstream, req, timeout, false)
+	return tcpQuery(ctx, upstream.String(), req, timeout, false)
 }

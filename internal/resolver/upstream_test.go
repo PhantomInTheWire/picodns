@@ -27,7 +27,8 @@ func TestUpstreamResolve(t *testing.T) {
 		}
 	}()
 
-	r := NewUpstream([]string{conn.LocalAddr().String()}, time.Second)
+	r, err := NewUpstream([]string{conn.LocalAddr().String()}, time.Second)
+	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 

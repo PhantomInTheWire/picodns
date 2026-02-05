@@ -173,7 +173,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 }
 
 func (r *Recursive) queryServer(ctx context.Context, server string, req []byte) ([]byte, error) {
-	resp, needsTCP, err := queryUDP(ctx, server, req, r.timeout, &r.pool, true)
+	resp, needsTCP, err := queryUDPString(ctx, server, req, r.timeout, &r.pool, true)
 	if err != nil {
 		return nil, err
 	}

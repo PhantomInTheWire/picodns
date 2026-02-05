@@ -35,7 +35,12 @@ func main() {
 		res = resolver.NewCached(cacheStore, resolver.NewRecursive(cfg.Timeout))
 	} else {
 		logger.Info("using upstream resolver", "upstreams", cfg.Upstreams)
-		res = resolver.NewCached(cacheStore, resolver.NewUpstream(cfg.Upstreams, cfg.Timeout))
+		upstream, err := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
+		if err != nil {
+			logger.Error("failed to create upstream resolver", "error", err)
+			os.Exit(1)
+		}
+		res = resolver.NewCached(cacheStore, upstream)
 	}
 
 	srv := server.New(cfg, logger, res)

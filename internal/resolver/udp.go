@@ -9,12 +9,7 @@ import (
 	"picodns/internal/dns"
 )
 
-func queryUDP(ctx context.Context, server string, req []byte, timeout time.Duration, pool *sync.Pool, validate bool) ([]byte, bool, error) {
-	raddr, err := net.ResolveUDPAddr("udp", server)
-	if err != nil {
-		return nil, false, err
-	}
-
+func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, pool *sync.Pool, validate bool) ([]byte, bool, error) {
 	conn, err := net.DialUDP("udp", nil, raddr)
 	if err != nil {
 		return nil, false, err
@@ -57,4 +52,12 @@ func queryUDP(ctx context.Context, server string, req []byte, timeout time.Durat
 	}
 
 	return resp, false, nil
+}
+
+func queryUDPString(ctx context.Context, server string, req []byte, timeout time.Duration, pool *sync.Pool, validate bool) ([]byte, bool, error) {
+	raddr, err := net.ResolveUDPAddr("udp", server)
+	if err != nil {
+		return nil, false, err
+	}
+	return queryUDP(ctx, raddr, req, timeout, pool, validate)
 }
