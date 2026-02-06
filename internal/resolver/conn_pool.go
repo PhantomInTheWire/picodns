@@ -63,7 +63,7 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return conn, func() { conn.Close() }, nil
+	return conn, func() { _ = conn.Close() }, nil
 }
 
 // release marks a connection as available
@@ -78,13 +78,14 @@ func (p *connPool) release(index int) {
 }
 
 // close closes all connections in the pool
+// nolint:unused // Reserved for future use
 func (p *connPool) close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	for _, uc := range p.conns {
 		if uc.conn != nil {
-			uc.conn.Close()
+			_ = uc.conn.Close()
 		}
 	}
 	p.conns = p.conns[:0]

@@ -31,7 +31,7 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 		if cp != nil {
 			connRelease()
 		} else {
-			conn.Close()
+			_ = conn.Close()
 		}
 	}
 

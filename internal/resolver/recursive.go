@@ -289,8 +289,6 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	return ips, nil
 }
 
-const maxLabels = 16
-
 func splitLabelsInto(name string, labels []string) int {
 	if name == "" || name == "." {
 		return 0
