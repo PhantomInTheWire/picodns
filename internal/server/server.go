@@ -129,7 +129,7 @@ func (s *Server) worker(ctx context.Context, wg *sync.WaitGroup) {
 
 	for job := range s.jobQueue {
 		// Process the job
-		resp, err := s.resolver.Resolve(ctx, (*job.dataPtr)[:job.n])
+		resp, cleanup, err := s.resolver.Resolve(ctx, (*job.dataPtr)[:job.n])
 		if err != nil {
 			s.HandlerErrors.Add(1)
 			s.logger.Error("handler error", "error", err)
@@ -137,12 +137,18 @@ func (s *Server) worker(ctx context.Context, wg *sync.WaitGroup) {
 			continue
 		}
 		if len(resp) == 0 {
+			if cleanup != nil {
+				cleanup()
+			}
 			s.pool.Put(job.dataPtr)
 			continue
 		}
 		if _, writeErr := job.conn.WriteTo(resp, job.addr); writeErr != nil {
 			s.WriteErrors.Add(1)
 			s.logger.Error("write error", "error", writeErr)
+		}
+		if cleanup != nil {
+			cleanup()
 		}
 		s.pool.Put(job.dataPtr)
 	}

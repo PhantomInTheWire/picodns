@@ -32,7 +32,7 @@ func TestUpstreamResolve(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	resp, err := r.Resolve(ctx, []byte{9, 9, 9})
+	resp, _, err := r.Resolve(ctx, []byte{9, 9, 9})
 	require.NoError(t, err)
 	require.Equal(t, []byte{1, 2, 3}, resp)
 

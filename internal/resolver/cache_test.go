@@ -17,9 +17,9 @@ type stubResolver struct {
 	call int
 }
 
-func (s *stubResolver) Resolve(ctx context.Context, req []byte) ([]byte, error) {
+func (s *stubResolver) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	s.call++
-	return s.resp, s.err
+	return s.resp, nil, s.err
 }
 
 func TestCachedResolverStoresAndHits(t *testing.T) {
@@ -29,11 +29,11 @@ func TestCachedResolverStoresAndHits(t *testing.T) {
 	up := &stubResolver{resp: resp}
 	res := NewCached(store, up)
 
-	first, err := res.Resolve(context.Background(), req)
+	first, _, err := res.Resolve(context.Background(), req)
 	require.NoError(t, err)
 	require.Equal(t, resp, first)
 
-	second, err := res.Resolve(context.Background(), req)
+	second, _, err := res.Resolve(context.Background(), req)
 	require.NoError(t, err)
 	require.Equal(t, resp, second)
 	require.Equal(t, 1, up.call)

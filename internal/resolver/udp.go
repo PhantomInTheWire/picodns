@@ -9,24 +9,30 @@ import (
 	"picodns/internal/dns"
 )
 
-// queryUDP performs a UDP DNS query. The caller must call pool.Put(bufPtr) when done with resp.
+// queryUDP performs a UDP DNS query. The caller must call release() when done with resp.
 // If cp is nil, a new connection is created for this query.
-func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, pool *sync.Pool, cp *connPool, validate bool) (resp []byte, bufPtr *[]byte, needsTCP bool, err error) {
+func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, pool *sync.Pool, cp *connPool, validate bool) (resp []byte, release func(), needsTCP bool, err error) {
 	var conn *net.UDPConn
-	var release func()
+	var connRelease func()
 
 	if cp != nil {
-		conn, release, err = cp.get()
+		conn, connRelease, err = cp.get()
 		if err != nil {
 			return nil, nil, false, err
 		}
-		defer release()
 	} else {
 		conn, err = net.ListenUDP("udp", nil)
 		if err != nil {
 			return nil, nil, false, err
 		}
-		defer conn.Close()
+	}
+
+	rel := func() {
+		if cp != nil {
+			connRelease()
+		} else {
+			conn.Close()
+		}
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -34,38 +40,46 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 		deadline = d
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
+		rel()
 		return nil, nil, false, err
 	}
 
 	if _, err := conn.WriteTo(req, raddr); err != nil {
+		rel()
 		return nil, nil, false, err
 	}
 
-	bufPtr = pool.Get().(*[]byte)
+	bufPtr := pool.Get().(*[]byte)
 	buf := *bufPtr
 
 	n, _, err := conn.ReadFrom(buf)
 	if err != nil {
 		pool.Put(bufPtr)
+		rel()
 		return nil, nil, false, err
 	}
 
 	// Return slice of pooled buffer - caller owns bufPtr now
 	resp = buf[:n]
 
+	finalRelease := func() {
+		pool.Put(bufPtr)
+		rel()
+	}
+
 	if validate {
 		if err := dns.ValidateResponse(req, resp); err != nil {
-			pool.Put(bufPtr)
+			finalRelease()
 			return nil, nil, false, err
 		}
 	}
 
 	header, err := dns.ReadHeader(resp)
 	if err == nil && (header.Flags&dns.FlagTC) != 0 {
-		return resp, bufPtr, true, nil
+		return resp, finalRelease, true, nil
 	}
 
-	return resp, bufPtr, false, nil
+	return resp, finalRelease, false, nil
 }
 
 // queryUDPString performs a UDP DNS query and returns a copy of the response.

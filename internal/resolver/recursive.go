@@ -70,15 +70,17 @@ func NewRecursive() *Recursive {
 	return r
 }
 
-func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, error) {
-	reqMsg, err := dns.ReadMessage(req)
+func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
+	reqMsg, err := dns.ReadMessagePooled(req)
 	if err != nil || len(reqMsg.Questions) == 0 {
-		return nil, errors.New("recursive resolver: invalid request")
+		return nil, nil, errors.New("recursive resolver: invalid request")
 	}
-
 	q := reqMsg.Questions[0]
+	name := q.Name
+	reqMsg.Release()
 
-	return r.resolveIterative(ctx, req, q.Name, 0, nil)
+	resp, err := r.resolveIterative(ctx, req, name, 0, nil)
+	return resp, nil, err
 }
 
 // resolveIterative performs iterative DNS resolution starting from root servers.
@@ -89,11 +91,18 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 		return nil, ErrMaxDepth
 	}
 
-	origMsg, _ := dns.ReadMessage(origReq)
+	origMsg, err := dns.ReadMessagePooled(origReq)
+	if err != nil {
+		return nil, err
+	}
 	q := origMsg.Questions[0]
+	origMsg.Release()
 
 	servers := rootServers
-	labels := splitLabels(name)
+	// Stack-allocate labels array to avoid heap allocation
+	var labelsBuf [16]string
+	labelCount := splitLabelsInto(name, labelsBuf[:])
+	labels := labelsBuf[:labelCount]
 
 	for i := len(labels); i >= 0; i-- {
 		zone := joinLabels(labels[i:])
@@ -107,7 +116,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 				continue
 			}
 
-			respMsg, err := dns.ReadMessage(resp)
+			respMsg, err := dns.ReadMessagePooled(resp)
 			if err != nil {
 				continue
 			}
@@ -129,6 +138,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 							seenCnames = make(map[string]struct{})
 						}
 						if _, seen := seenCnames[cnameKey]; seen {
+							respMsg.Release()
 							return nil, ErrCnameLoop
 						}
 						seenCnames[cnameKey] = struct{}{}
@@ -137,19 +147,23 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 						if err != nil {
 							continue
 						}
+						respMsg.Release()
 						return r.resolveIterative(ctx, newReq, cnameTarget, depth+1, seenCnames)
 					}
 				}
 
+				respMsg.Release()
 				return resp, nil
 			}
 
 			if (respMsg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
+				respMsg.Release()
 				return resp, nil
 			}
 
 			if len(respMsg.Authorities) > 0 {
-				nsServers, glueIPs := extractReferral(resp, respMsg, zone)
+				nsServers, glueIPs := extractReferral(resp, *respMsg, zone)
+				respMsg.Release()
 				if len(nsServers) == 0 {
 					continue
 				}
@@ -166,6 +180,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 
 				break
 			}
+			respMsg.Release()
 		}
 	}
 
@@ -253,7 +268,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 			continue
 		}
 
-		respMsg, err := dns.ReadMessage(resp)
+		respMsg, err := dns.ReadMessagePooled(resp)
 		if err != nil {
 			continue
 		}
@@ -264,6 +279,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 				ips = append(ips, ip)
 			}
 		}
+		respMsg.Release()
 	}
 
 	if len(ips) == 0 {
@@ -273,26 +289,30 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	return ips, nil
 }
 
-func splitLabels(name string) []string {
+const maxLabels = 16
+
+func splitLabelsInto(name string, labels []string) int {
 	if name == "" || name == "." {
-		return nil
+		return 0
 	}
 	name = strings.TrimSuffix(name, ".")
 
-	var labels []string
+	count := 0
 	start := 0
-	for i := 0; i < len(name); i++ {
+	for i := 0; i < len(name) && count < len(labels); i++ {
 		if name[i] == '.' {
 			if i > start {
-				labels = append(labels, name[start:i])
+				labels[count] = name[start:i]
+				count++
 			}
 			start = i + 1
 		}
 	}
-	if start < len(name) {
-		labels = append(labels, name[start:])
+	if start < len(name) && count < len(labels) {
+		labels[count] = name[start:]
+		count++
 	}
-	return labels
+	return count
 }
 
 func joinLabels(labels []string) string {

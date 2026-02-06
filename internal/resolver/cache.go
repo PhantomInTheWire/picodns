@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"strings"
+	"sync"
 	"time"
 
 	"picodns/internal/cache"
@@ -17,65 +18,89 @@ func normalizeName(name string) string {
 
 // Resolver is the interface for DNS resolution
 type Resolver interface {
-	Resolve(ctx context.Context, req []byte) ([]byte, error)
+	Resolve(ctx context.Context, req []byte) ([]byte, func(), error)
 }
 
 // Cached wraps a resolver with DNS response caching
 type Cached struct {
 	cache    *cache.Cache
 	upstream Resolver
+	respPool sync.Pool
 }
 
 func NewCached(cacheStore *cache.Cache, upstream Resolver) *Cached {
-	return &Cached{cache: cacheStore, upstream: upstream}
+	c := &Cached{
+		cache:    cacheStore,
+		upstream: upstream,
+	}
+	c.respPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, dns.MaxMessageSize)
+			return &b
+		},
+	}
+	return c
 }
 
-func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, error) {
-	reqMsg, err := dns.ReadMessage(req)
+func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
+	reqMsg, err := dns.ReadMessagePooled(req)
 	if err != nil || len(reqMsg.Questions) == 0 {
 		return c.upstream.Resolve(ctx, req)
 	}
-
 	q := reqMsg.Questions[0]
 
 	// Try to get from cache and rebuild response with correct ID
-	if cached, ok := c.getCached(q, reqMsg.Header.ID); ok {
-		return cached, nil
+	if cached, cleanup, ok := c.getCached(q, reqMsg.Header.ID); ok {
+		reqMsg.Release()
+		return cached, cleanup, nil
 	}
+	reqMsg.Release()
 
-	resp, err := c.upstream.Resolve(ctx, req)
+	resp, cleanup, err := c.upstream.Resolve(ctx, req)
 	if err != nil || dns.ValidateResponse(req, resp) != nil {
-		return resp, err
+		return resp, cleanup, err
 	}
 
 	// Parse and cache the response
-	if respMsg, err := dns.ReadMessage(resp); err == nil {
-		if ttl, ok := extractTTL(respMsg, q); ok {
+	if respMsg, err := dns.ReadMessagePooled(resp); err == nil {
+		if ttl, ok := extractTTL(*respMsg, q); ok {
 			c.setCache(q, resp, ttl)
 		}
+		respMsg.Release()
 	}
-	return resp, nil
+	return resp, cleanup, nil
 }
 
 // getCached retrieves a cached response and rebuilds it with the correct transaction ID
-func (c *Cached) getCached(q dns.Question, queryID uint16) ([]byte, bool) {
+func (c *Cached) getCached(q dns.Question, queryID uint16) ([]byte, func(), bool) {
 	if c.cache == nil {
-		return nil, false
+		return nil, nil, false
 	}
 
 	cachedData, ok := c.cache.Get(q)
 	if !ok || len(cachedData) < 2 {
-		return nil, false
+		return nil, nil, false
 	}
 
-	// Copy the cached response data
-	resp := make([]byte, len(cachedData))
+	// Use pooled buffer instead of allocating
+	bufPtr := c.respPool.Get().(*[]byte)
+	if cap(*bufPtr) < len(cachedData) {
+		// Buffer too small, allocate new one
+		c.respPool.Put(bufPtr)
+		newBuf := make([]byte, len(cachedData))
+		bufPtr = &newBuf
+	}
+	resp := (*bufPtr)[:len(cachedData)]
 	copy(resp, cachedData)
 
 	// Patch the transaction ID
 	binary.BigEndian.PutUint16(resp[0:2], queryID)
 
-	return resp, true
+	cleanup := func() {
+		c.respPool.Put(bufPtr)
+	}
+
+	return resp, cleanup, true
 }
 
 // setCache stores a raw DNS response in the cache

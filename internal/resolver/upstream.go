@@ -45,37 +45,35 @@ func NewUpstream(upstreamAddrs []string) (*Upstream, error) {
 	return u, nil
 }
 
-func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, error) {
+func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	if len(u.upstreams) == 0 {
-		return nil, ErrNoUpstreams
+		return nil, nil, ErrNoUpstreams
 	}
 
 	var lastErr error
 	for _, upstream := range u.upstreams {
-		resp, err := u.query(ctx, upstream, req)
+		resp, cleanup, err := u.query(ctx, upstream, req)
 		if err == nil {
-			return resp, nil
+			return resp, cleanup, nil
 		}
 		lastErr = err
 	}
-	return nil, lastErr
+	return nil, nil, lastErr
 }
 
-func (u *Upstream) query(ctx context.Context, upstream *net.UDPAddr, req []byte) ([]byte, error) {
-	resp, bufPtr, needsTCP, err := queryUDP(ctx, upstream, req, defaultTimeout, &u.pool, u.connPool, false)
+func (u *Upstream) query(ctx context.Context, upstream *net.UDPAddr, req []byte) (resp []byte, cleanup func(), err error) {
+	resp, release, needsTCP, err := queryUDP(ctx, upstream, req, defaultTimeout, &u.pool, u.connPool, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer u.pool.Put(bufPtr)
 
 	if needsTCP {
-		return u.queryTCP(ctx, upstream, req)
+		release()
+		resp, err := u.queryTCP(ctx, upstream, req)
+		return resp, nil, err
 	}
 
-	// Make a copy since the caller expects to own the response
-	respCopy := make([]byte, len(resp))
-	copy(respCopy, resp)
-	return respCopy, nil
+	return resp, release, nil
 }
 
 func (u *Upstream) queryTCP(ctx context.Context, upstream *net.UDPAddr, req []byte) ([]byte, error) {
