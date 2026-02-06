@@ -106,7 +106,6 @@ func startServerWithUpstreams(t *testing.T, upstreams []string) (string, func())
 	cfg := config.Default()
 	cfg.Upstreams = upstreams
 	cfg.Workers = 4
-	cfg.Timeout = 5 * time.Second
 	cfg.CacheSize = 100
 
 	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -116,7 +115,8 @@ func startServerWithUpstreams(t *testing.T, upstreams []string) (string, func())
 
 	cfg.ListenAddrs = []string{addr}
 
-	up := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
+	up, err := resolver.NewUpstream(cfg.Upstreams)
+	require.NoError(t, err)
 	store := cache.New(cfg.CacheSize, nil)
 	res := resolver.NewCached(store, up)
 

@@ -87,7 +87,6 @@ func TestE2EBackpressure(t *testing.T) {
 	cfg := config.Default()
 	cfg.Upstreams = []string{upstreamAddr}
 	cfg.Workers = 1
-	cfg.Timeout = 1 * time.Second
 
 	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -96,7 +95,8 @@ func TestE2EBackpressure(t *testing.T) {
 	cfg.ListenAddrs = []string{serverAddr}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	up := resolver.NewUpstream(cfg.Upstreams, cfg.Timeout)
+	up, err := resolver.NewUpstream(cfg.Upstreams)
+	require.NoError(t, err)
 	store := cache.New(cfg.CacheSize, nil)
 	res := resolver.NewCached(store, up)
 

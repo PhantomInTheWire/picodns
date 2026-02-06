@@ -45,7 +45,6 @@ func startServerWithResolver(t *testing.T, res resolver.Resolver) (string, func(
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := config.Default()
 	cfg.Workers = 4
-	cfg.Timeout = 10 * time.Second
 	cfg.CacheSize = 100
 
 	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -211,7 +210,7 @@ type testResolver struct {
 
 func newTestResolver(mockRoot string, queryLog *sync.Map) *testResolver {
 	return &testResolver{
-		rec:       resolver.NewRecursive(5 * time.Second),
+		rec:       resolver.NewRecursive(),
 		mockRoot:  mockRoot,
 		cache:     cache.New(100, nil),
 		queryLog:  queryLog,
@@ -230,9 +229,10 @@ func (r *testResolver) resolveServer(server string) string {
 	return server
 }
 
-func (r *testResolver) Resolve(ctx context.Context, req []byte) ([]byte, error) {
+func (r *testResolver) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	// Perform iterative resolution with mock root
-	return r.resolveIterative(ctx, req, 0)
+	resp, err := r.resolveIterative(ctx, req, 0)
+	return resp, nil, err
 }
 
 func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth int) ([]byte, error) {
@@ -536,7 +536,6 @@ func startTestServer(t *testing.T, res resolver.Resolver) (string, func()) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := config.Default()
 	cfg.Workers = 4
-	cfg.Timeout = 5 * time.Second
 	cfg.CacheSize = 100
 
 	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -570,7 +569,7 @@ func TestE2ERecursiveResolution(t *testing.T) {
 
 func testRecursiveResolutionReal(t *testing.T) {
 	requireNetwork(t)
-	rec := resolver.NewRecursive(10 * time.Second)
+	rec := resolver.NewRecursive()
 	serverAddr, stopServer := startServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -869,7 +868,7 @@ func TestE2ERecursiveCNAME(t *testing.T) {
 
 func testRecursiveCNAMEReal(t *testing.T) {
 	requireNetwork(t)
-	rec := resolver.NewRecursive(10 * time.Second)
+	rec := resolver.NewRecursive()
 	serverAddr, stopServer := startServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -1049,7 +1048,7 @@ func TestE2ERecursiveAAAA(t *testing.T) {
 	}
 	requireNetwork(t)
 
-	rec := resolver.NewRecursive(10 * time.Second)
+	rec := resolver.NewRecursive()
 	serverAddr, stopServer := startServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -1075,7 +1074,7 @@ func TestE2ERecursiveMX(t *testing.T) {
 	}
 	requireNetwork(t)
 
-	rec := resolver.NewRecursive(10 * time.Second)
+	rec := resolver.NewRecursive()
 	serverAddr, stopServer := startServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -1103,7 +1102,7 @@ func TestE2ERecursiveMultipleDomains(t *testing.T) {
 	}
 	requireNetwork(t)
 
-	rec := resolver.NewRecursive(10 * time.Second)
+	rec := resolver.NewRecursive()
 	serverAddr, stopServer := startServerWithResolver(t, rec)
 	t.Cleanup(stopServer)
 
