@@ -89,15 +89,15 @@ func queryUDPString(ctx context.Context, server string, req []byte, timeout time
 	if err != nil {
 		return nil, false, err
 	}
-	resp, bufPtr, needsTCP, err := queryUDP(ctx, raddr, req, timeout, pool, nil, validate)
+	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, timeout, pool, nil, validate)
 	if err != nil {
 		return nil, false, err
 	}
+	defer release()
 
 	// Make a copy for recursive resolver (it expects to own the response)
 	respCopy := make([]byte, len(resp))
 	copy(respCopy, resp)
-	pool.Put(bufPtr)
 
 	return respCopy, needsTCP, nil
 }
