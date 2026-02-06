@@ -48,16 +48,19 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		return c.upstream.Resolve(ctx, req)
 	}
 	q := reqMsg.Questions[0]
+	reqHeader := reqMsg.Header
+	questions := make([]dns.Question, len(reqMsg.Questions))
+	copy(questions, reqMsg.Questions)
 
 	// Try to get from cache and rebuild response with correct ID
-	if cached, cleanup, ok := c.getCached(q, reqMsg.Header.ID); ok {
+	if cached, cleanup, ok := c.getCached(q, reqHeader.ID); ok {
 		reqMsg.Release()
 		return cached, cleanup, nil
 	}
 	reqMsg.Release()
 
 	resp, cleanup, err := c.upstream.Resolve(ctx, req)
-	if err != nil || dns.ValidateResponse(req, resp) != nil {
+	if err != nil || dns.ValidateResponseWithRequest(reqHeader, questions, resp) != nil {
 		return resp, cleanup, err
 	}
 

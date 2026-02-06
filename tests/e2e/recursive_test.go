@@ -240,7 +240,8 @@ func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth i
 		return nil, resolver.ErrMaxDepth
 	}
 
-	msg, _ := dns.ReadMessage(req)
+	msg, _ := dns.ReadMessagePooled(req)
+	defer msg.Release()
 	if len(msg.Questions) == 0 {
 		return nil, resolver.ErrNoNameservers
 	}
@@ -263,15 +264,13 @@ func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth i
 				continue
 			}
 
-			respMsg, err := dns.ReadMessage(resp)
+			respMsg, err := dns.ReadMessagePooled(resp)
 			if err != nil {
 				continue
 			}
 
 			// Check for answers
 			if len(respMsg.Answers) > 0 {
-				// If we have non-CNAME answers (like A records), return them directly
-				// This handles the case where a CNAME chain is resolved in one response
 				hasNonCNAME := false
 				for _, ans := range respMsg.Answers {
 					if ans.Type != dns.TypeCNAME {
@@ -280,15 +279,16 @@ func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth i
 					}
 				}
 				if hasNonCNAME {
+					respMsg.Release()
 					return resp, nil
 				}
 
-				// Handle CNAME - need to follow the chain
 				for _, ans := range respMsg.Answers {
 					if ans.Type == dns.TypeCNAME {
 						cnameTarget := extractCNAME(resp, ans)
 						if cnameTarget != "" {
 							newReq, err := buildQuery(msg.Header.ID, cnameTarget, q.Type, q.Class)
+							respMsg.Release()
 							if err != nil {
 								continue
 							}
@@ -300,16 +300,20 @@ func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth i
 
 			// Check for NXDOMAIN
 			if (respMsg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
+				respMsg.Release()
 				return resp, nil
 			}
 
 			// Follow referral
 			if len(respMsg.Authorities) > 0 {
-				newServers := r.extractReferral(resp, respMsg, zone)
+				newServers := r.extractReferral(resp, *respMsg, zone)
+				respMsg.Release()
 				if len(newServers) > 0 {
 					servers = newServers
 					break
 				}
+			} else {
+				respMsg.Release()
 			}
 		}
 	}
@@ -574,7 +578,8 @@ func testRecursiveResolutionReal(t *testing.T) {
 	defer stopServer()
 
 	resp := sendQuery(t, serverAddr, "www.example.com")
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err)
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 
@@ -597,7 +602,8 @@ func testRecursiveResolutionMock(t *testing.T) {
 
 	// Start authoritative server for example.com
 	authServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		msg, _ := dns.ReadMessage(req)
+		msg, _ := dns.ReadMessagePooled(req)
+		defer msg.Release()
 		if len(msg.Questions) == 0 {
 			return
 		}
@@ -698,7 +704,8 @@ func testRecursiveResolutionMock(t *testing.T) {
 	require.True(t, rootWasQueried, "Root server should have been queried")
 
 	// Parse and verify response
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err)
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 	require.GreaterOrEqual(t, len(msg.Answers), 1)
@@ -737,7 +744,8 @@ func TestE2ERecursiveBailiwickProtection(t *testing.T) {
 
 	// Start legitimate authoritative server
 	legitServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		msg, _ := dns.ReadMessage(req)
+		msg, _ := dns.ReadMessagePooled(req)
+		defer msg.Release()
 		if len(msg.Questions) == 0 {
 			return
 		}
@@ -852,7 +860,8 @@ func TestE2ERecursiveBailiwickProtection(t *testing.T) {
 	require.False(t, maliciousQueried.Load(), "Malicious server (%s) should NOT have been contacted - bailiwick protection failed!", maliciousServer.addr)
 
 	// Verify we got a valid response from legitimate server
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err)
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 }
@@ -874,7 +883,8 @@ func testRecursiveCNAMEReal(t *testing.T) {
 
 	// Query for a domain that typically has CNAME records
 	resp := sendQuery(t, serverAddr, "www.github.com")
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err)
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 
@@ -897,7 +907,8 @@ func testRecursiveCNAMEMock(t *testing.T) {
 
 	// Start authoritative server
 	authServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		msg, _ := dns.ReadMessage(req)
+		msg, _ := dns.ReadMessagePooled(req)
+		defer msg.Release()
 		if len(msg.Questions) == 0 {
 			return
 		}
@@ -1024,7 +1035,8 @@ func testRecursiveCNAMEMock(t *testing.T) {
 	require.NotEmpty(t, resp)
 
 	// Parse response
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err)
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 	require.GreaterOrEqual(t, len(msg.Answers), 1)
@@ -1053,7 +1065,8 @@ func TestE2ERecursiveAAAA(t *testing.T) {
 	defer stopServer()
 
 	resp := sendQueryWithType(t, serverAddr, "cloudflare.com", dns.TypeAAAA)
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err)
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 
@@ -1081,7 +1094,8 @@ func TestE2ERecursiveMX(t *testing.T) {
 	// MX record type = 15
 	const typeMX uint16 = 15
 	resp := sendQueryWithType(t, serverAddr, "google.com", typeMX)
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err)
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 
@@ -1118,7 +1132,8 @@ func TestE2ERecursiveMultipleDomains(t *testing.T) {
 		t.Run(domain, func(t *testing.T) {
 			t.Parallel()
 			resp := sendQuery(t, serverAddr, domain)
-			msg, err := dns.ReadMessage(resp)
+			msg, err := dns.ReadMessagePooled(resp)
+			defer msg.Release()
 			require.NoError(t, err)
 			require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F)
 			require.GreaterOrEqual(t, len(msg.Answers), 1, "Should have at least one answer for %s", domain)

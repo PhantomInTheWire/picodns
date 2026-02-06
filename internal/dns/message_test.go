@@ -49,8 +49,9 @@ func TestReadMessage(t *testing.T) {
 	resp, err := BuildResponse(buf[:qEnd], []Answer{ans}, 0)
 	require.NoError(t, err)
 
-	msg, err := ReadMessage(resp)
+	msg, err := ReadMessagePooled(resp)
 	require.NoError(t, err)
+	defer msg.Release()
 	require.Equal(t, h.ID, msg.Header.ID)
 	require.Equal(t, uint16(1), msg.Header.QDCount)
 	require.Equal(t, uint16(1), msg.Header.ANCount)

@@ -67,10 +67,11 @@ func TestExtractReferral_InBailiwick(t *testing.T) {
 	err := dns.WriteHeader(buf, header)
 	require.NoError(t, err)
 
-	msg, err := dns.ReadMessage(buf[:off])
+	msg, err := dns.ReadMessagePooled(buf[:off])
 	require.NoError(t, err)
+	defer msg.Release()
 
-	nsNames, glueIPs := extractReferral(buf, msg, "example.com")
+	nsNames, glueIPs := extractReferral(buf, *msg, "example.com")
 
 	// Should have one NS name
 	require.Len(t, nsNames, 1)
@@ -139,10 +140,11 @@ func TestExtractReferral_OutOfBailiwick(t *testing.T) {
 	err := dns.WriteHeader(buf, header)
 	require.NoError(t, err)
 
-	msg, err := dns.ReadMessage(buf[:off])
+	msg, err := dns.ReadMessagePooled(buf[:off])
 	require.NoError(t, err)
+	defer msg.Release()
 
-	nsNames, glueIPs := extractReferral(buf, msg, "example.com")
+	nsNames, glueIPs := extractReferral(buf, *msg, "example.com")
 
 	// Should have one NS name
 	require.Len(t, nsNames, 1)
@@ -273,8 +275,9 @@ func TestExtractReferral_CaseInsensitiveCNAME(t *testing.T) {
 	err := dns.WriteHeader(buf, header)
 	require.NoError(t, err)
 
-	msg, err := dns.ReadMessage(buf[:off])
+	msg, err := dns.ReadMessagePooled(buf[:off])
 	require.NoError(t, err)
+	defer msg.Release()
 	require.Len(t, msg.Answers, 1)
 
 	ans := msg.Answers[0]

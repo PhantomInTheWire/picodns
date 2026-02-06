@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"io"
 	"net"
 	"strings"
 	"sync"
@@ -56,11 +55,14 @@ func secureRandUint16() uint16 {
 }
 
 type Recursive struct {
-	pool sync.Pool
+	pool     sync.Pool
+	connPool *connPool
 }
 
 func NewRecursive() *Recursive {
-	r := &Recursive{}
+	r := &Recursive{
+		connPool: newConnPool(),
+	}
 	r.pool = sync.Pool{
 		New: func() any {
 			b := make([]byte, 4096)
@@ -77,32 +79,31 @@ func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), er
 	}
 	q := reqMsg.Questions[0]
 	name := q.Name
+	reqHeader := reqMsg.Header
+	questions := make([]dns.Question, len(reqMsg.Questions))
+	copy(questions, reqMsg.Questions)
 	reqMsg.Release()
 
-	resp, err := r.resolveIterative(ctx, req, name, 0, nil)
-	return resp, nil, err
+	return r.resolveIterative(ctx, reqHeader, questions, name, 0, nil)
 }
 
 // resolveIterative performs iterative DNS resolution starting from root servers.
-// It queries servers iteratively, following referrals until an answer is found.
-// The depth parameter tracks recursion to prevent infinite loops from CNAME chains or circular referrals.
-func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name string, depth int, seenCnames map[string]struct{}) ([]byte, error) {
+func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, questions []dns.Question, name string, depth int, seenCnames map[string]struct{}) ([]byte, func(), error) {
 	if depth >= maxRecursionDepth {
-		return nil, ErrMaxDepth
+		return nil, nil, ErrMaxDepth
 	}
 
-	origMsg, err := dns.ReadMessagePooled(origReq)
-	if err != nil {
-		return nil, err
-	}
-	q := origMsg.Questions[0]
-	origMsg.Release()
-
+	q := questions[0]
 	servers := rootServers
-	// Stack-allocate labels array to avoid heap allocation
 	var labelsBuf [16]string
 	labelCount := splitLabelsInto(name, labelsBuf[:])
 	labels := labelsBuf[:labelCount]
+
+	// Rebuild query for this specific name/type if it's different from original (e.g. following CNAME)
+	query, err := buildQuery(reqHeader.ID, name, q.Type, q.Class)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	for i := len(labels); i >= 0; i-- {
 		zone := joinLabels(labels[i:])
@@ -111,13 +112,16 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 		}
 
 		for _, server := range servers {
-			resp, err := r.queryServer(ctx, server, origReq)
+			resp, cleanup, err := r.queryServer(ctx, server, query, reqHeader, questions)
 			if err != nil {
 				continue
 			}
 
 			respMsg, err := dns.ReadMessagePooled(resp)
 			if err != nil {
+				if cleanup != nil {
+					cleanup()
+				}
 				continue
 			}
 
@@ -133,45 +137,55 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 							continue
 						}
 
-						cnameKey := name + "->" + cnameTarget
 						if seenCnames == nil {
 							seenCnames = make(map[string]struct{})
 						}
-						if _, seen := seenCnames[cnameKey]; seen {
+						if _, seen := seenCnames[cnameTarget]; seen {
 							respMsg.Release()
-							return nil, ErrCnameLoop
+							if cleanup != nil {
+								cleanup()
+							}
+							return nil, nil, ErrCnameLoop
 						}
-						seenCnames[cnameKey] = struct{}{}
+						seenCnames[cnameTarget] = struct{}{}
 
-						newReq, err := buildQuery(origMsg.Header.ID, cnameTarget, q.Type, q.Class)
-						if err != nil {
-							continue
-						}
 						respMsg.Release()
-						return r.resolveIterative(ctx, newReq, cnameTarget, depth+1, seenCnames)
+						if cleanup != nil {
+							cleanup()
+						}
+						return r.resolveIterative(ctx, reqHeader, questions, cnameTarget, depth+1, seenCnames)
 					}
 				}
 
 				respMsg.Release()
-				return resp, nil
+				return resp, cleanup, nil
 			}
 
 			if (respMsg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
 				respMsg.Release()
-				return resp, nil
+				return resp, cleanup, nil
 			}
 
 			if len(respMsg.Authorities) > 0 {
 				nsServers, glueIPs := extractReferral(resp, *respMsg, zone)
 				respMsg.Release()
 				if len(nsServers) == 0 {
+					if cleanup != nil {
+						cleanup()
+					}
 					continue
 				}
 
 				if len(glueIPs) > 0 {
 					servers = glueIPs
+					if cleanup != nil {
+						cleanup()
+					}
 				} else {
 					resolvedIPs, err := r.resolveNSNames(ctx, nsServers, depth+1, seenCnames)
+					if cleanup != nil {
+						cleanup()
+					}
 					if err != nil {
 						continue
 					}
@@ -181,72 +195,47 @@ func (r *Recursive) resolveIterative(ctx context.Context, origReq []byte, name s
 				break
 			}
 			respMsg.Release()
+			if cleanup != nil {
+				cleanup()
+			}
 		}
 	}
 
-	return nil, ErrNoNameservers
+	return nil, nil, ErrNoNameservers
 }
 
-func (r *Recursive) queryServer(ctx context.Context, server string, req []byte) ([]byte, error) {
-	resp, needsTCP, err := queryUDPString(ctx, server, req, defaultTimeout, &r.pool, true)
+func (r *Recursive) queryServer(ctx context.Context, server string, req []byte, reqHeader dns.Header, questions []dns.Question) ([]byte, func(), error) {
+	raddr, err := net.ResolveUDPAddr("udp", server)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	resp, cleanup, needsTCP, err := queryUDP(ctx, raddr, req, defaultTimeout, &r.pool, r.connPool, false)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := dns.ValidateResponseWithRequest(reqHeader, questions, resp); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+
 	if needsTCP {
-		return r.queryServerTCP(ctx, server, req)
+		cleanup()
+		respTCP, err := r.queryServerTCP(ctx, server, req, reqHeader, questions)
+		return respTCP, nil, err
 	}
-	return resp, nil
+	return resp, cleanup, nil
 }
 
-func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byte) ([]byte, error) {
-	return tcpQuery(ctx, server, req, defaultTimeout, true)
-}
-
-// tcpQuery performs a TCP DNS query to the given server.
-// If validate is true, it validates the response against the request.
-func tcpQuery(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", server)
+func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byte, reqHeader dns.Header, questions []dns.Question) ([]byte, error) {
+	resp, err := tcpQuery(ctx, server, req, defaultTimeout, false)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = conn.Close() }()
-
-	deadline := time.Now().Add(timeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
-	if err := conn.SetDeadline(deadline); err != nil {
+	if err := dns.ValidateResponseWithRequest(reqHeader, questions, resp); err != nil {
 		return nil, err
 	}
-
-	reqLen := uint16(len(req))
-	var lenBuf [2]byte
-	binary.BigEndian.PutUint16(lenBuf[:], reqLen)
-
-	if _, err := conn.Write(lenBuf[:]); err != nil {
-		return nil, err
-	}
-	if _, err := conn.Write(req); err != nil {
-		return nil, err
-	}
-
-	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
-		return nil, err
-	}
-	respLen := int(binary.BigEndian.Uint16(lenBuf[:]))
-
-	resp := make([]byte, respLen)
-	if _, err := io.ReadFull(conn, resp); err != nil {
-		return nil, err
-	}
-
-	if validate {
-		if err := dns.ValidateResponse(req, resp); err != nil {
-			return nil, err
-		}
-	}
-
 	return resp, nil
 }
 
@@ -259,17 +248,18 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 
 	var ips []string
 	for _, nsName := range nsNames {
-		req, err := buildQuery(secureRandUint16(), nsName, dns.TypeA, dns.ClassIN)
-		if err != nil {
-			continue
-		}
-		resp, err := r.resolveIterative(ctx, req, nsName, depth+1, seenCnames)
+		id := secureRandUint16()
+		reqHeader := dns.Header{ID: id, QDCount: 1, Flags: dns.FlagRD}
+		questions := []dns.Question{{Name: nsName, Type: dns.TypeA, Class: dns.ClassIN}}
+
+		resp, cleanup, err := r.resolveIterative(ctx, reqHeader, questions, nsName, depth+1, seenCnames)
 		if err != nil {
 			continue
 		}
 
 		respMsg, err := dns.ReadMessagePooled(resp)
 		if err != nil {
+			cleanup()
 			continue
 		}
 
@@ -280,6 +270,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 			}
 		}
 		respMsg.Release()
+		cleanup()
 	}
 
 	if len(ips) == 0 {

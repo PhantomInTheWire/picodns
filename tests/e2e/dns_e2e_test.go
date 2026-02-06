@@ -34,7 +34,7 @@ func TestE2EForwardAndCache(t *testing.T) {
 	start1 := time.Now()
 	resp1 := sendQuery(t, serverAddr, "example.com")
 	duration1 := time.Since(start1)
-	msg1, err := dns.ReadMessage(resp1)
+	msg1, err := dns.ReadMessagePooled(resp1)
 	require.NoError(t, err, "Failed to parse first DNS response")
 
 	// Validate response header
@@ -53,7 +53,7 @@ func TestE2EForwardAndCache(t *testing.T) {
 	start2 := time.Now()
 	resp2 := sendQuery(t, serverAddr, "example.com")
 	duration2 := time.Since(start2)
-	msg2, err := dns.ReadMessage(resp2)
+	msg2, err := dns.ReadMessagePooled(resp2)
 	require.NoError(t, err, "Failed to parse second DNS response")
 
 	// Validate second response matches first (cached)
@@ -77,7 +77,7 @@ func TestE2ENegativeCache(t *testing.T) {
 	start1 := time.Now()
 	resp1 := sendQuery(t, serverAddr, "this-definitely-does-not-exist-12345.example")
 	duration1 := time.Since(start1)
-	msg1, err := dns.ReadMessage(resp1)
+	msg1, err := dns.ReadMessagePooled(resp1)
 	require.NoError(t, err, "Failed to parse first DNS response")
 
 	// Validate NXDOMAIN response header
@@ -89,7 +89,7 @@ func TestE2ENegativeCache(t *testing.T) {
 	start2 := time.Now()
 	resp2 := sendQuery(t, serverAddr, "this-definitely-does-not-exist-12345.example")
 	duration2 := time.Since(start2)
-	msg2, err := dns.ReadMessage(resp2)
+	msg2, err := dns.ReadMessagePooled(resp2)
 	require.NoError(t, err, "Failed to parse second DNS response")
 
 	// Validate second response matches first (cached)

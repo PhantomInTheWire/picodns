@@ -28,7 +28,8 @@ func TestE2ETCPFallback(t *testing.T) {
 
 	// Query a domain that typically has large responses (dns.google has many records)
 	resp := sendQuery(t, serverAddr, "dns.google")
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err, "Failed to parse DNS response")
 
 	// Validate response header
@@ -120,7 +121,8 @@ func TestE2EBackpressure(t *testing.T) {
 
 	require.Greater(t, srv.DroppedPackets.Load(), uint64(0), "Should have dropped packets")
 	resp := sendQuery(t, serverAddr, "stable.com")
-	msg, err := dns.ReadMessage(resp)
+	msg, err := dns.ReadMessagePooled(resp)
+	defer msg.Release()
 	require.NoError(t, err, "Failed to parse DNS response")
 
 	// Validate response header

@@ -34,11 +34,11 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 	now := time.Now()
 
 	// Try to find an available connection
-	for i, uc := range p.conns {
+	for _, uc := range p.conns {
 		if !uc.inUse && now.Sub(uc.lastUsed) < ConnPoolIdleTimeout {
 			uc.inUse = true
 			uc.lastUsed = now
-			return uc.conn, func() { p.release(i) }, nil
+			return uc.conn, func() { p.release(uc) }, nil
 		}
 	}
 
@@ -55,7 +55,7 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 			inUse:    true,
 		}
 		p.conns = append(p.conns, uc)
-		return conn, func() { p.release(len(p.conns) - 1) }, nil
+		return conn, func() { p.release(uc) }, nil
 	}
 
 	// Pool exhausted - create ephemeral connection (fallback)
@@ -67,14 +67,12 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 }
 
 // release marks a connection as available
-func (p *connPool) release(index int) {
+func (p *connPool) release(uc *udpConn) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if index >= 0 && index < len(p.conns) {
-		p.conns[index].inUse = false
-		p.conns[index].lastUsed = time.Now()
-	}
+	uc.inUse = false
+	uc.lastUsed = time.Now()
 }
 
 // close closes all connections in the pool

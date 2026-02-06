@@ -138,23 +138,6 @@ func AcquireMessage() *Message {
 	return messagePool.Get().(*Message)
 }
 
-func ReadMessage(buf []byte) (Message, error) {
-	msg, err := ReadMessagePooled(buf)
-	if err != nil {
-		return Message{}, err
-	}
-	// Copy to non-pooled Message for backward compatibility
-	result := Message{
-		Header:      msg.Header,
-		Questions:   append([]Question(nil), msg.Questions...),
-		Answers:     append([]ResourceRecord(nil), msg.Answers...),
-		Authorities: append([]ResourceRecord(nil), msg.Authorities...),
-		Additionals: append([]ResourceRecord(nil), msg.Additionals...),
-	}
-	msg.Release()
-	return result, nil
-}
-
 // ReadMessagePooled parses a DNS message using a pooled Message struct.
 // The caller MUST call msg.Release() when done to return it to the pool.
 func ReadMessagePooled(buf []byte) (*Message, error) {
@@ -280,11 +263,27 @@ func WriteQuestion(buf []byte, off int, q Question) (int, error) {
 	return next + 4, nil
 }
 
-func ValidateResponse(req, resp []byte) error {
+func ValidateResponse(req []byte, resp []byte) error {
 	reqHeader, err := ReadHeader(req)
 	if err != nil {
 		return err
 	}
+	offReq := HeaderLen
+	questions := make([]Question, 0, reqHeader.QDCount)
+	for i := 0; i < int(reqHeader.QDCount); i++ {
+		q, next, err := ReadQuestion(req, offReq)
+		if err != nil {
+			return err
+		}
+		questions = append(questions, q)
+		offReq = next
+	}
+
+	return ValidateResponseWithRequest(reqHeader, questions, resp)
+}
+
+// ValidateResponseWithRequest validates a DNS response against a pre-parsed request.
+func ValidateResponseWithRequest(reqHeader Header, reqQuestions []Question, resp []byte) error {
 	respHeader, err := ReadHeader(resp)
 	if err != nil {
 		return err
@@ -302,23 +301,17 @@ func ValidateResponse(req, resp []byte) error {
 		return ErrQDMismatch
 	}
 
-	offReq := HeaderLen
 	offResp := HeaderLen
-
 	for i := 0; i < int(reqHeader.QDCount); i++ {
-		qReq, nextReq, err := ReadQuestion(req, offReq)
-		if err != nil {
-			return err
-		}
 		qResp, nextResp, err := ReadQuestion(resp, offResp)
 		if err != nil {
 			return err
 		}
 
+		qReq := reqQuestions[i]
 		if !strings.EqualFold(qReq.Name, qResp.Name) || qReq.Type != qResp.Type || qReq.Class != qResp.Class {
 			return ErrQDMismatch
 		}
-		offReq = nextReq
 		offResp = nextResp
 	}
 

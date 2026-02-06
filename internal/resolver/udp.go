@@ -2,6 +2,8 @@ package resolver
 
 import (
 	"context"
+	"encoding/binary"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -82,22 +84,50 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 	return resp, finalRelease, false, nil
 }
 
-// queryUDPString performs a UDP DNS query and returns a copy of the response.
-// This is used by the recursive resolver which doesn't need zero-allocation.
-func queryUDPString(ctx context.Context, server string, req []byte, timeout time.Duration, pool *sync.Pool, validate bool) ([]byte, bool, error) {
-	raddr, err := net.ResolveUDPAddr("udp", server)
+// tcpQuery performs a TCP DNS query to the given server.
+// If validate is true, it validates the response against the request.
+func tcpQuery(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", server)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, timeout, pool, nil, validate)
-	if err != nil {
-		return nil, false, err
+	defer func() { _ = conn.Close() }()
+
+	deadline := time.Now().Add(timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
 	}
-	defer release()
+	if err := conn.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
 
-	// Make a copy for recursive resolver (it expects to own the response)
-	respCopy := make([]byte, len(resp))
-	copy(respCopy, resp)
+	reqLen := uint16(len(req))
+	var lenBuf [2]byte
+	binary.BigEndian.PutUint16(lenBuf[:], reqLen)
 
-	return respCopy, needsTCP, nil
+	if _, err := conn.Write(lenBuf[:]); err != nil {
+		return nil, err
+	}
+	if _, err := conn.Write(req); err != nil {
+		return nil, err
+	}
+
+	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+		return nil, err
+	}
+	respLen := int(binary.BigEndian.Uint16(lenBuf[:]))
+
+	resp := make([]byte, respLen)
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return nil, err
+	}
+
+	if validate {
+		if err := dns.ValidateResponse(req, resp); err != nil {
+			return nil, err
+		}
+	}
+
+	return resp, nil
 }
