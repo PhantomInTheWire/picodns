@@ -5,7 +5,6 @@ package e2e
 import (
 	"context"
 	"encoding/binary"
-	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -17,10 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"picodns/internal/cache"
-	"picodns/internal/config"
 	"picodns/internal/dns"
+	"picodns/internal/dnsutil"
 	"picodns/internal/resolver"
-	"picodns/internal/server"
+	"picodns/tests/testutil"
 )
 
 // useRealNetwork returns true if E2E_REAL_NETWORK environment variable is set
@@ -38,33 +37,6 @@ func requireNetwork(t *testing.T) {
 		t.Skip("Network unavailable")
 	}
 	conn.Close()
-}
-
-// startServerWithResolver starts a picodns server with the given resolver
-func startServerWithResolver(t *testing.T, res resolver.Resolver) (string, func()) {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	cfg := config.Default()
-	cfg.Workers = 4
-	cfg.CacheSize = 100
-
-	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := listen.LocalAddr().String()
-	_ = listen.Close()
-
-	cfg.ListenAddrs = []string{addr}
-
-	srv := server.New(cfg, logger, res)
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		_ = srv.Start(ctx)
-	}()
-
-	time.Sleep(200 * time.Millisecond)
-
-	return addr, func() {
-		cancel()
-	}
 }
 
 // sendQueryWithType sends a DNS query with specific record type
@@ -95,108 +67,6 @@ type mockNameserver struct {
 	handler  func(req []byte, addr net.Addr)
 	stopChan chan struct{}
 	wg       sync.WaitGroup
-}
-
-func startMockNameserver(t *testing.T, handler func(req []byte, addr net.Addr)) *mockNameserver {
-	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	ns := &mockNameserver{
-		conn:     conn,
-		addr:     conn.LocalAddr().String(),
-		handler:  handler,
-		stopChan: make(chan struct{}),
-	}
-
-	ns.wg.Add(1)
-	go func() {
-		defer ns.wg.Done()
-		buf := make([]byte, 512)
-		for {
-			select {
-			case <-ns.stopChan:
-				return
-			default:
-			}
-
-			_ = conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
-			n, addr, err := conn.ReadFrom(buf)
-			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue
-				}
-				return
-			}
-
-			req := make([]byte, n)
-			copy(req, buf[:n])
-			go handler(req, addr)
-		}
-	}()
-
-	t.Cleanup(func() {
-		close(ns.stopChan)
-		_ = conn.Close()
-		ns.wg.Wait()
-	})
-
-	return ns
-}
-
-// Helper to get connection for sending responses
-func getConn(ns *mockNameserver) *net.UDPConn {
-	return ns.conn.(*net.UDPConn)
-}
-
-// buildReferralResponse creates a DNS referral response with authority and additional sections
-func buildReferralResponse(req []byte, nsRecords []dns.Answer, glueRecords []dns.Answer) []byte {
-	buf := make([]byte, dns.MaxMessageSize)
-
-	reqHeader, _ := dns.ReadHeader(req)
-	q, _, _ := dns.ReadQuestion(req, dns.HeaderLen)
-
-	// Write header (QR=1, AA=0 - not authoritative, it's a referral)
-	header := dns.Header{
-		ID:      reqHeader.ID,
-		Flags:   dns.FlagQR | dns.FlagRD | dns.FlagRA,
-		QDCount: 1,
-		NSCount: uint16(len(nsRecords)),
-		ARCount: uint16(len(glueRecords)),
-	}
-	dns.WriteHeader(buf, header)
-
-	// Write question section
-	off, _ := dns.WriteQuestion(buf, dns.HeaderLen, q)
-
-	// Write authority section (NS records)
-	for _, ns := range nsRecords {
-		off, _ = dns.EncodeName(buf, off, ns.Name)
-		binary.BigEndian.PutUint16(buf[off:off+2], ns.Type)
-		binary.BigEndian.PutUint16(buf[off+2:off+4], ns.Class)
-		binary.BigEndian.PutUint32(buf[off+4:off+8], ns.TTL)
-		off += 8
-
-		rdlenPos := off
-		off += 2
-		dataStart := off
-		off, _ = dns.EncodeName(buf, off, string(ns.RData))
-		binary.BigEndian.PutUint16(buf[rdlenPos:rdlenPos+2], uint16(off-dataStart))
-	}
-
-	// Write additional section (glue A records)
-	for _, glue := range glueRecords {
-		off, _ = dns.EncodeName(buf, off, glue.Name)
-		binary.BigEndian.PutUint16(buf[off:off+2], glue.Type)
-		binary.BigEndian.PutUint16(buf[off+2:off+4], glue.Class)
-		binary.BigEndian.PutUint32(buf[off+4:off+8], glue.TTL)
-		off += 8
-		binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(glue.RData)))
-		off += 2
-		copy(buf[off:], glue.RData)
-		off += len(glue.RData)
-	}
-
-	return buf[:off]
 }
 
 // testResolver wraps a recursive resolver to redirect root queries to mock
@@ -250,12 +120,12 @@ func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth i
 	servers := []string{r.mockRoot}
 
 	// Labels for building zones
-	labels := splitLabels(q.Name)
+	labels := dnsutil.SplitLabels(q.Name)
 
 	for i := len(labels); i >= 0; i-- {
-		zone := joinLabels(labels[i:])
+		zone := dnsutil.JoinLabels(labels[i:])
 		if zone != "." {
-			zone = normalizeName(zone)
+			zone = dnsutil.NormalizeName(zone)
 		}
 
 		for _, server := range servers {
@@ -285,9 +155,9 @@ func (r *testResolver) resolveIterative(ctx context.Context, req []byte, depth i
 
 				for _, ans := range respMsg.Answers {
 					if ans.Type == dns.TypeCNAME {
-						cnameTarget := extractCNAME(resp, ans)
+						cnameTarget := dnsutil.ExtractNameFromData(resp, ans.DataOffset)
 						if cnameTarget != "" {
-							newReq, err := buildQuery(msg.Header.ID, cnameTarget, q.Type, q.Class)
+							newReq, err := dnsutil.BuildQuery(msg.Header.ID, cnameTarget, q.Type, q.Class)
 							respMsg.Release()
 							if err != nil {
 								continue
@@ -396,7 +266,7 @@ func (r *testResolver) extractReferral(fullMsg []byte, msg dns.Message, zone str
 				continue
 			}
 
-			nsName := extractNSName(fullMsg, rr)
+			nsName := dnsutil.ExtractNameFromData(fullMsg, rr.DataOffset)
 			if nsName != "" {
 				nsNames = append(nsNames, nsName)
 			}
@@ -431,137 +301,6 @@ func (r *testResolver) extractReferral(fullMsg []byte, msg dns.Message, zone str
 	return nil
 }
 
-func extractCNAME(fullMsg []byte, rr dns.ResourceRecord) string {
-	if len(fullMsg) == 0 || rr.DataOffset >= len(fullMsg) {
-		return ""
-	}
-	name, _, err := dns.DecodeName(fullMsg, rr.DataOffset)
-	if err != nil {
-		return ""
-	}
-	return name
-}
-
-func extractNSName(fullMsg []byte, rr dns.ResourceRecord) string {
-	if len(fullMsg) == 0 || rr.DataOffset >= len(fullMsg) {
-		return ""
-	}
-	name, _, err := dns.DecodeName(fullMsg, rr.DataOffset)
-	if err != nil {
-		return ""
-	}
-	return name
-}
-
-func splitLabels(name string) []string {
-	if name == "" || name == "." {
-		return nil
-	}
-	name = strings.TrimSuffix(name, ".")
-
-	var labels []string
-	start := 0
-	for i := 0; i < len(name); i++ {
-		if name[i] == '.' {
-			if i > start {
-				labels = append(labels, name[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(name) {
-		labels = append(labels, name[start:])
-	}
-	return labels
-}
-
-func joinLabels(labels []string) string {
-	if len(labels) == 0 {
-		return "."
-	}
-	result := labels[0]
-	for i := 1; i < len(labels); i++ {
-		result += "." + labels[i]
-	}
-	return result
-}
-
-func normalizeName(name string) string {
-	return strings.ToLower(strings.TrimSuffix(name, "."))
-}
-
-func isSubdomain(child, parent string) bool {
-	if parent == "." || parent == "" {
-		return true
-	}
-	child = normalizeName(child)
-	parent = normalizeName(parent)
-
-	if child == parent {
-		return true
-	}
-
-	// child is a subdomain of parent if parent is a suffix of child
-	// and the character before parent in child is a dot
-	if !strings.HasSuffix(child, "."+parent) {
-		return false
-	}
-
-	return true
-}
-
-func buildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
-	buf := make([]byte, dns.MaxMessageSize)
-
-	header := dns.Header{
-		ID:      id,
-		Flags:   dns.FlagRD,
-		QDCount: 1,
-	}
-	if err := dns.WriteHeader(buf, header); err != nil {
-		return nil, err
-	}
-
-	off := dns.HeaderLen
-	off, err := dns.EncodeName(buf, off, name)
-	if err != nil {
-		return nil, err
-	}
-
-	binary.BigEndian.PutUint16(buf[off:off+2], qtype)
-	binary.BigEndian.PutUint16(buf[off+2:off+4], qclass)
-	off += 4
-
-	return buf[:off], nil
-}
-
-// startTestServer starts a picodns server with the given resolver
-func startTestServer(t *testing.T, res resolver.Resolver) (string, func()) {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	cfg := config.Default()
-	cfg.Workers = 4
-	cfg.CacheSize = 100
-
-	listen, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := listen.LocalAddr().String()
-	_ = listen.Close()
-
-	cfg.ListenAddrs = []string{addr}
-
-	srv := server.New(cfg, logger, res)
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		_ = srv.Start(ctx)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-
-	return addr, func() {
-		cancel()
-	}
-}
-
 // TestE2ERecursiveResolution tests the full iterative resolution process
 func TestE2ERecursiveResolution(t *testing.T) {
 	if useRealNetwork() {
@@ -574,7 +313,7 @@ func TestE2ERecursiveResolution(t *testing.T) {
 func testRecursiveResolutionReal(t *testing.T) {
 	requireNetwork(t)
 	rec := resolver.NewRecursive()
-	serverAddr, stopServer := startServerWithResolver(t, rec)
+	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
 	resp := sendQuery(t, serverAddr, "www.example.com")
@@ -601,7 +340,7 @@ func testRecursiveResolutionMock(t *testing.T) {
 	var authConn *net.UDPConn
 
 	// Start authoritative server for example.com
-	authServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
+	authServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
 		msg, _ := dns.ReadMessagePooled(req)
 		defer msg.Release()
 		if len(msg.Questions) == 0 {
@@ -621,16 +360,16 @@ func testRecursiveResolutionMock(t *testing.T) {
 			_, _ = authConn.WriteTo(resp, addr)
 		}
 	})
-	authConn = authServer.conn.(*net.UDPConn)
-	authHost, _, _ := net.SplitHostPort(authServer.addr)
+	authConn = authServer.Conn()
+	authHost, _, _ := net.SplitHostPort(authServer.Addr)
 	authAddr = authHost
 
 	var tldAddr string
 	var tldConn *net.UDPConn
 
 	// Start TLD server for .com
-	tldServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		resp := buildReferralResponse(req,
+	tldServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
+		resp := testutil.BuildReferralResponse(t, req,
 			[]dns.Answer{
 				{
 					Name:  "example.com",
@@ -652,15 +391,15 @@ func testRecursiveResolutionMock(t *testing.T) {
 		)
 		_, _ = tldConn.WriteTo(resp, addr)
 	})
-	tldConn = tldServer.conn.(*net.UDPConn)
-	tldHost, _, _ := net.SplitHostPort(tldServer.addr)
+	tldConn = tldServer.Conn()
+	tldHost, _, _ := net.SplitHostPort(tldServer.Addr)
 	tldAddr = tldHost
 
 	var rootConn *net.UDPConn
 
 	// Start root server
-	rootServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		resp := buildReferralResponse(req,
+	rootServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
+		resp := testutil.BuildReferralResponse(t, req,
 			[]dns.Answer{
 				{
 					Name:  "com",
@@ -682,17 +421,17 @@ func testRecursiveResolutionMock(t *testing.T) {
 		)
 		_, _ = rootConn.WriteTo(resp, addr)
 	})
-	rootConn = rootServer.conn.(*net.UDPConn)
+	rootConn = rootServer.Conn()
 
 	// Create test resolver with mock root
-	testRes := newTestResolver(rootServer.addr, queryLog)
+	testRes := newTestResolver(rootServer.Addr, queryLog)
 
 	// Register the mock servers so resolver knows their actual addresses
-	testRes.registerServer(tldHost, tldServer.addr)
-	testRes.registerServer(authHost, authServer.addr)
+	testRes.registerServer(tldHost, tldServer.Addr)
+	testRes.registerServer(authHost, authServer.Addr)
 
 	// Start picodns server
-	serverAddr, stopServer := startTestServer(t, testRes)
+	serverAddr, stopServer := testutil.StartTestServer(t, testRes)
 	defer stopServer()
 
 	// Send query
@@ -700,7 +439,7 @@ func testRecursiveResolutionMock(t *testing.T) {
 	require.NotEmpty(t, resp)
 
 	// Verify all servers in chain were queried
-	_, rootWasQueried := queryLog.Load(rootServer.addr)
+	_, rootWasQueried := queryLog.Load(rootServer.Addr)
 	require.True(t, rootWasQueried, "Root server should have been queried")
 
 	// Parse and verify response
@@ -732,18 +471,18 @@ func TestE2ERecursiveBailiwickProtection(t *testing.T) {
 	var maliciousConn *net.UDPConn
 
 	// Start malicious server (should NOT be contacted)
-	maliciousServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
+	maliciousServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
 		maliciousQueried.Store(true)
 		t.Error("Malicious server should not have been contacted!")
 	})
-	maliciousConn = maliciousServer.conn.(*net.UDPConn)
+	maliciousConn = maliciousServer.Conn()
 	_ = maliciousConn
 
 	var legitAddr string
 	var legitConn *net.UDPConn
 
 	// Start legitimate authoritative server
-	legitServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
+	legitServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
 		msg, _ := dns.ReadMessagePooled(req)
 		defer msg.Release()
 		if len(msg.Questions) == 0 {
@@ -763,16 +502,16 @@ func TestE2ERecursiveBailiwickProtection(t *testing.T) {
 			_, _ = legitConn.WriteTo(resp, addr)
 		}
 	})
-	legitConn = legitServer.conn.(*net.UDPConn)
-	legitHost, _, _ := net.SplitHostPort(legitServer.addr)
+	legitConn = legitServer.Conn()
+	legitHost, _, _ := net.SplitHostPort(legitServer.Addr)
 	legitAddr = legitHost
 
 	var tldAddr string
 	var tldConn *net.UDPConn
 
 	// Start TLD server that returns out-of-bailiwick glue
-	tldServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		resp := buildReferralResponse(req,
+	tldServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
+		resp := testutil.BuildReferralResponse(t, req,
 			[]dns.Answer{
 				{
 					Name:  "example.com",
@@ -810,15 +549,15 @@ func TestE2ERecursiveBailiwickProtection(t *testing.T) {
 		)
 		_, _ = tldConn.WriteTo(resp, addr)
 	})
-	tldConn = tldServer.conn.(*net.UDPConn)
-	tldHost, _, _ := net.SplitHostPort(tldServer.addr)
+	tldConn = tldServer.Conn()
+	tldHost, _, _ := net.SplitHostPort(tldServer.Addr)
 	tldAddr = tldHost
 
 	var rootConn *net.UDPConn
 
 	// Start root server
-	rootServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		resp := buildReferralResponse(req,
+	rootServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
+		resp := testutil.BuildReferralResponse(t, req,
 			[]dns.Answer{
 				{
 					Name:  "com",
@@ -840,24 +579,24 @@ func TestE2ERecursiveBailiwickProtection(t *testing.T) {
 		)
 		_, _ = rootConn.WriteTo(resp, addr)
 	})
-	rootConn = rootServer.conn.(*net.UDPConn)
+	rootConn = rootServer.Conn()
 
 	// Create test resolver
-	testRes := newTestResolver(rootServer.addr, queryLog)
+	testRes := newTestResolver(rootServer.Addr, queryLog)
 
 	// Register servers with the resolver
-	testRes.registerServer(tldHost, tldServer.addr)
-	testRes.registerServer(legitHost, legitServer.addr)
+	testRes.registerServer(tldHost, tldServer.Addr)
+	testRes.registerServer(legitHost, legitServer.Addr)
 
 	// Start picodns server
-	serverAddr, stopServer := startTestServer(t, testRes)
+	serverAddr, stopServer := testutil.StartTestServer(t, testRes)
 	defer stopServer()
 
 	// Send query
 	resp := sendQuery(t, serverAddr, "www.example.com")
 
 	// Verify malicious server was NOT contacted
-	require.False(t, maliciousQueried.Load(), "Malicious server (%s) should NOT have been contacted - bailiwick protection failed!", maliciousServer.addr)
+	require.False(t, maliciousQueried.Load(), "Malicious server (%s) should NOT have been contacted - bailiwick protection failed!", maliciousServer.Addr)
 
 	// Verify we got a valid response from legitimate server
 	msg, err := dns.ReadMessagePooled(resp)
@@ -878,7 +617,7 @@ func TestE2ERecursiveCNAME(t *testing.T) {
 func testRecursiveCNAMEReal(t *testing.T) {
 	requireNetwork(t)
 	rec := resolver.NewRecursive()
-	serverAddr, stopServer := startServerWithResolver(t, rec)
+	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
 	// Query for a domain that typically has CNAME records
@@ -906,7 +645,7 @@ func testRecursiveCNAMEMock(t *testing.T) {
 	var authConn *net.UDPConn
 
 	// Start authoritative server
-	authServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
+	authServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
 		msg, _ := dns.ReadMessagePooled(req)
 		defer msg.Release()
 		if len(msg.Questions) == 0 {
@@ -956,16 +695,16 @@ func testRecursiveCNAMEMock(t *testing.T) {
 			_, _ = authConn.WriteTo(buf[:off], addr)
 		}
 	})
-	authConn = authServer.conn.(*net.UDPConn)
-	authHost, _, _ := net.SplitHostPort(authServer.addr)
+	authConn = authServer.Conn()
+	authHost, _, _ := net.SplitHostPort(authServer.Addr)
 	authAddr = authHost
 
 	var tldAddr string
 	var tldConn *net.UDPConn
 
 	// Start TLD server
-	tldServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		resp := buildReferralResponse(req,
+	tldServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
+		resp := testutil.BuildReferralResponse(t, req,
 			[]dns.Answer{
 				{
 					Name:  "example.com",
@@ -987,15 +726,15 @@ func testRecursiveCNAMEMock(t *testing.T) {
 		)
 		_, _ = tldConn.WriteTo(resp, addr)
 	})
-	tldConn = tldServer.conn.(*net.UDPConn)
-	tldHost, _, _ := net.SplitHostPort(tldServer.addr)
+	tldConn = tldServer.Conn()
+	tldHost, _, _ := net.SplitHostPort(tldServer.Addr)
 	tldAddr = tldHost
 
 	var rootConn *net.UDPConn
 
 	// Start root server
-	rootServer := startMockNameserver(t, func(req []byte, addr net.Addr) {
-		resp := buildReferralResponse(req,
+	rootServer := testutil.StartMockNameserver(t, func(req []byte, addr net.Addr) {
+		resp := testutil.BuildReferralResponse(t, req,
 			[]dns.Answer{
 				{
 					Name:  "com",
@@ -1017,17 +756,17 @@ func testRecursiveCNAMEMock(t *testing.T) {
 		)
 		_, _ = rootConn.WriteTo(resp, addr)
 	})
-	rootConn = rootServer.conn.(*net.UDPConn)
+	rootConn = rootServer.Conn()
 
 	// Create test resolver
-	testRes := newTestResolver(rootServer.addr, queryLog)
+	testRes := newTestResolver(rootServer.Addr, queryLog)
 
 	// Register servers with the resolver
-	testRes.registerServer(tldHost, tldServer.addr)
-	testRes.registerServer(authHost, authServer.addr)
+	testRes.registerServer(tldHost, tldServer.Addr)
+	testRes.registerServer(authHost, authServer.Addr)
 
 	// Start picodns server
-	serverAddr, stopServer := startTestServer(t, testRes)
+	serverAddr, stopServer := testutil.StartTestServer(t, testRes)
 	defer stopServer()
 
 	// Query for cname.example.com which has a CNAME chain
@@ -1061,7 +800,7 @@ func TestE2ERecursiveAAAA(t *testing.T) {
 	requireNetwork(t)
 
 	rec := resolver.NewRecursive()
-	serverAddr, stopServer := startServerWithResolver(t, rec)
+	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
 	resp := sendQueryWithType(t, serverAddr, "cloudflare.com", dns.TypeAAAA)
@@ -1088,7 +827,7 @@ func TestE2ERecursiveMX(t *testing.T) {
 	requireNetwork(t)
 
 	rec := resolver.NewRecursive()
-	serverAddr, stopServer := startServerWithResolver(t, rec)
+	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
 	// MX record type = 15
@@ -1117,7 +856,7 @@ func TestE2ERecursiveMultipleDomains(t *testing.T) {
 	requireNetwork(t)
 
 	rec := resolver.NewRecursive()
-	serverAddr, stopServer := startServerWithResolver(t, rec)
+	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	t.Cleanup(stopServer)
 
 	domains := []string{
