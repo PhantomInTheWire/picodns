@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"picodns/internal/dns"
+	"picodns/internal/dnsutil"
 )
 
 // defaultRootServers contains the default DNS root server addresses.
@@ -122,15 +123,15 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 	labels := labelsBuf[:labelCount]
 
 	// Rebuild query for this specific name/type if it's different from original (e.g. following CNAME)
-	query, err := buildQuery(reqHeader.ID, name, q.Type, q.Class)
+	query, err := dnsutil.BuildQuery(reqHeader.ID, name, q.Type, q.Class)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	for i := len(labels); i >= 0; i-- {
-		zone := joinLabels(labels[i:])
+		zone := dnsutil.JoinLabels(labels[i:])
 		if zone != "." {
-			zone = normalizeName(zone)
+			zone = dnsutil.NormalizeName(zone)
 		}
 
 		for _, server := range servers {
@@ -154,7 +155,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 							continue
 						}
 
-						cnameTarget := extractNameFromData(resp, ans.DataOffset)
+						cnameTarget := dnsutil.ExtractNameFromData(resp, ans.DataOffset)
 						if cnameTarget == "" {
 							continue
 						}
@@ -326,42 +327,6 @@ func splitLabelsInto(name string, labels []string) int {
 	return count
 }
 
-func joinLabels(labels []string) string {
-	if len(labels) == 0 {
-		return "."
-	}
-	return strings.Join(labels, ".")
-}
-
-// extractNameFromData extracts a domain name from resource record data,
-// using the full message buffer to resolve compression pointers.
-func extractNameFromData(fullMsg []byte, dataOffset int) string {
-	if len(fullMsg) == 0 || dataOffset >= len(fullMsg) {
-		return ""
-	}
-	name, _, err := dns.DecodeName(fullMsg, dataOffset)
-	if err != nil {
-		return ""
-	}
-	return name
-}
-
-// isSubdomain checks if child is a subdomain of parent.
-// Both names should be normalized (lowercase, no trailing dot).
-func isSubdomain(child, parent string) bool {
-	if parent == "." {
-		return true
-	}
-	child = strings.ToLower(strings.TrimSuffix(child, "."))
-	parent = strings.ToLower(strings.TrimSuffix(parent, "."))
-
-	if child == parent {
-		return true
-	}
-
-	return strings.HasSuffix(child, "."+parent)
-}
-
 // extractReferral extracts nameserver names and their associated glue record IPs from a DNS message.
 // It validates that NS records are in-bailiwick to prevent cache poisoning.
 func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []string) {
@@ -375,12 +340,12 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 			nsOwner := strings.ToLower(strings.TrimSuffix(rr.Name, "."))
 
 			if zoneNorm != "" {
-				if !isSubdomain(nsOwner, zoneNorm) && nsOwner != zoneNorm {
+				if !dnsutil.IsSubdomain(nsOwner, zoneNorm) && nsOwner != zoneNorm {
 					continue
 				}
 			}
 
-			nsName := extractNameFromData(fullMsg, rr.DataOffset)
+			nsName := dnsutil.ExtractNameFromData(fullMsg, rr.DataOffset)
 			if nsName != "" {
 				nsNames = append(nsNames, nsName)
 			}
@@ -398,7 +363,7 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 	for _, nsName := range nsNames {
 		if zoneNorm != "" {
 			nsNameNorm := strings.ToLower(strings.TrimSuffix(nsName, "."))
-			if !isSubdomain(nsNameNorm, zoneNorm) {
+			if !dnsutil.IsSubdomain(nsNameNorm, zoneNorm) {
 				continue
 			}
 		}
@@ -408,33 +373,4 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 	}
 
 	return nsNames, glueIPs
-}
-
-func buildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
-	labelCount := strings.Count(name, ".") + 1
-	if strings.HasSuffix(name, ".") {
-		labelCount--
-	}
-	buf := make([]byte, dns.HeaderLen+len(name)+labelCount+1+4)
-
-	header := dns.Header{
-		ID:      id,
-		Flags:   dns.FlagRD,
-		QDCount: 1,
-	}
-	if err := dns.WriteHeader(buf, header); err != nil {
-		return nil, err
-	}
-
-	off := dns.HeaderLen
-	off, err := dns.EncodeName(buf, off, name)
-	if err != nil {
-		return nil, err
-	}
-
-	binary.BigEndian.PutUint16(buf[off:off+2], qtype)
-	binary.BigEndian.PutUint16(buf[off+2:off+4], qclass)
-	off += 4
-
-	return buf[:off], nil
 }

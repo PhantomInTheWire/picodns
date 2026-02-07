@@ -3,18 +3,13 @@ package resolver
 import (
 	"context"
 	"encoding/binary"
-	"strings"
 	"sync"
 	"time"
 
 	"picodns/internal/cache"
 	"picodns/internal/dns"
+	"picodns/internal/dnsutil"
 )
-
-// normalizeName returns a normalized domain name (lowercase, no trailing dot)
-func normalizeName(name string) string {
-	return strings.ToLower(strings.TrimSuffix(name, "."))
-}
 
 // Resolver is the interface for DNS resolution
 type Resolver interface {
@@ -139,7 +134,7 @@ func extractTTL(msg dns.Message, q dns.Question) (time.Duration, bool) {
 	q = q.Normalize()
 	for _, rr := range msg.Answers {
 		if rr.Type == q.Type && rr.Class == q.Class && rr.TTL > 0 {
-			if normalizeName(rr.Name) == q.Name {
+			if dnsutil.NormalizeName(rr.Name) == q.Name {
 				return time.Duration(rr.TTL) * time.Second, true
 			}
 		}

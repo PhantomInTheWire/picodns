@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"picodns/internal/dns"
+	"picodns/internal/dnsutil"
 )
 
 func TestExtractReferral_InBailiwick(t *testing.T) {
@@ -284,7 +285,7 @@ func TestExtractReferral_CaseInsensitiveCNAME(t *testing.T) {
 	require.Equal(t, dns.TypeCNAME, ans.Type)
 	require.Equal(t, "WWW.EXAMPLE.COM", ans.Name)
 
-	cnameTarget := extractNameFromData(buf, ans.DataOffset)
+	cnameTarget := dnsutil.ExtractNameFromData(buf, ans.DataOffset)
 	require.Equal(t, "target.example.com", cnameTarget)
 
 	queryName := "www.example.com"
