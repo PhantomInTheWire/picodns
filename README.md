@@ -18,8 +18,9 @@ High-performance, lightweight DNS forwarding proxy in Go. Built for speed and se
 
 ## Quick Start
 ```bash
-make build
-sudo ./bin/dnsd -listen :53 -upstreams 1.1.1.1:53,8.8.8.8:53
+make run # regular mode
+make run-recursive # recursive mode
+./bin/dnsd -listen :1053 -upstreams 1.1.1.1:53,8.8.8.8:53 -queue-size 128 -timeout 10 # regular mode config options
 ```
 
 ## Configuration
@@ -57,12 +58,6 @@ dig @127.0.0.1 -p 53 example.com
 dig @127.0.0.1 -p 53 google.com A
 dig @127.0.0.1 -p 53 cloudflare.com AAAA
 dig @127.0.0.1 -p 53 github.com MX
-
-# Using nslookup
-nslookup example.com 127.0.0.1
-
-# Using host
-host example.com 127.0.0.1
 ```
 
 ### Recursive Mode Features

@@ -53,6 +53,10 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		}
 		respMsg.Release()
 	}
+
+	// Set RA (Recursion Available) flag on the response
+	setRAFlag(resp)
+
 	return resp, cleanup, nil
 }
 
@@ -63,7 +67,7 @@ func (c *Cached) getCached(q dns.Question, queryID uint16) ([]byte, func(), bool
 	}
 
 	cachedData, ok := c.cache.Get(q)
-	if !ok || len(cachedData) < 2 {
+	if !ok || len(cachedData) < 4 {
 		return nil, nil, false
 	}
 
@@ -77,6 +81,7 @@ func (c *Cached) getCached(q dns.Question, queryID uint16) ([]byte, func(), bool
 	copy(resp, cachedData)
 
 	binary.BigEndian.PutUint16(resp[0:2], queryID)
+	setRAFlag(resp)
 
 	cleanup := func() {
 		c.bufPool.Put(bufPtr)
@@ -123,4 +128,14 @@ func extractTTL(msg dns.Message, q dns.Question) (time.Duration, bool) {
 		}
 	}
 	return 0, false
+}
+
+// setRAFlag sets the Recursion Available (RA) flag in a DNS response header.
+// The response must be at least 4 bytes long.
+func setRAFlag(resp []byte) {
+	if len(resp) >= 4 {
+		flags := binary.BigEndian.Uint16(resp[2:4])
+		flags |= dns.FlagRA
+		binary.BigEndian.PutUint16(resp[2:4], flags)
+	}
 }

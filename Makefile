@@ -1,4 +1,4 @@
-.PHONY: test test-e2e test-e2e-network test-race fmt build clean lint
+.PHONY: test test-e2e test-e2e-network test-race fmt build clean lint run run-recursive
 
 test:
 	go test ./...
@@ -24,3 +24,9 @@ build:
 
 clean:
 	rm -rf bin
+
+run: build
+	./bin/dnsd -listen :1053 -upstreams 1.1.1.1:53,8.8.8.8:53
+
+run-recursive: build
+	./bin/dnsd -recursive -listen :1053
