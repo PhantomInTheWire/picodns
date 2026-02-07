@@ -15,7 +15,7 @@ var ErrBadPointer = errors.New("dns: bad compression pointer")
 
 func DecodeName(buf []byte, off int) (string, int, error) {
 	var builder strings.Builder
-	builder.Grow(64) // Pre-allocate for common names
+	builder.Grow(64)
 	next, err := decodeNameInto(buf, off, 0, nil, &builder)
 	if err != nil {
 		return "", 0, err

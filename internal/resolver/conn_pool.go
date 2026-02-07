@@ -26,14 +26,14 @@ func newConnPool() *connPool {
 	}
 }
 
-// get returns a connection from the pool or creates a new one
+// get returns a connection from the pool or creates a new one.
+// If the pool is exhausted, it creates an ephemeral connection as a fallback.
 func (p *connPool) get() (*net.UDPConn, func(), error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	now := time.Now()
 
-	// Try to find an available connection
 	for _, uc := range p.conns {
 		if !uc.inUse && now.Sub(uc.lastUsed) < ConnPoolIdleTimeout {
 			uc.inUse = true
@@ -42,7 +42,6 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 		}
 	}
 
-	// Create new connection if under limit
 	if len(p.conns) < ConnPoolMaxConns {
 		conn, err := net.ListenUDP("udp", nil)
 		if err != nil {
@@ -58,7 +57,6 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 		return conn, func() { p.release(uc) }, nil
 	}
 
-	// Pool exhausted - create ephemeral connection (fallback)
 	conn, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		return nil, nil, err

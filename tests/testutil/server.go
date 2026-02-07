@@ -11,9 +11,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"picodns/internal/cache"
 	"picodns/internal/config"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
+	"picodns/internal/types"
 )
 
 // ServerOption configures the test server
@@ -24,6 +26,7 @@ type serverOptions struct {
 	cacheSize    int
 	startupDelay time.Duration
 	listenAddr   string
+	upstreams    []string
 }
 
 // WithWorkers sets the number of workers for the server
@@ -54,9 +57,16 @@ func WithListenAddr(addr string) ServerOption {
 	}
 }
 
+// WithUpstreams sets the upstream DNS servers for forwarding mode
+func WithUpstreams(upstreams []string) ServerOption {
+	return func(o *serverOptions) {
+		o.upstreams = upstreams
+	}
+}
+
 // StartTestServer starts a picodns server with the given resolver and options
 // Returns the server address and a cleanup function
-func StartTestServer(t *testing.T, res resolver.Resolver, opts ...ServerOption) (string, func()) {
+func StartTestServer(t *testing.T, res types.Resolver, opts ...ServerOption) (string, func()) {
 	options := &serverOptions{
 		workers:      4,
 		cacheSize:    100,
@@ -112,6 +122,27 @@ func StartTestServer(t *testing.T, res resolver.Resolver, opts ...ServerOption) 
 
 // StartServerWithResolver starts a picodns server with the given resolver and 200ms startup delay
 // This is a convenience wrapper for tests that need a longer startup delay
-func StartServerWithResolver(t *testing.T, res resolver.Resolver) (string, func()) {
+func StartServerWithResolver(t *testing.T, res types.Resolver) (string, func()) {
 	return StartTestServer(t, res, WithStartupDelay(200*time.Millisecond))
+}
+
+// StartServerWithUpstreams starts a picodns server with upstream forwarding
+// This creates a cached upstream resolver and starts a server with it
+func StartServerWithUpstreams(t *testing.T, upstreams []string, opts ...ServerOption) (string, func()) {
+	options := &serverOptions{
+		workers:      4,
+		cacheSize:    100,
+		startupDelay: 50 * time.Millisecond,
+	}
+
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	up, err := resolver.NewUpstream(upstreams)
+	require.NoError(t, err)
+	store := cache.New(options.cacheSize, nil)
+	res := resolver.NewCached(store, up)
+
+	return StartTestServer(t, res, opts...)
 }

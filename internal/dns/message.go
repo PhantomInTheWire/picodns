@@ -52,7 +52,6 @@ const (
 
 	MaxMessageSize = 4096
 
-	// Compression pointer constants
 	CompressionMask    = 0xC0 // Top 2 bits indicate compression pointer
 	CompressionFlag    = 0xC0 // Full value indicating compression pointer
 	PointerMask        = 0x3F // Bottom 6 bits of first byte + second byte form offset
@@ -138,6 +137,34 @@ func AcquireMessage() *Message {
 	return messagePool.Get().(*Message)
 }
 
+// parseResourceRecords parses resource records and appends them to the provided slice.
+// Returns the updated slice, new offset, and any error.
+func parseResourceRecords(buf []byte, off int, count int, records []ResourceRecord) ([]ResourceRecord, int, error) {
+	for i := 0; i < count; i++ {
+		rr, next, err := ReadResourceRecord(buf, off)
+		if err != nil {
+			return records, off, err
+		}
+		records = append(records, rr)
+		off = next
+	}
+	return records, off, nil
+}
+
+// parseQuestions parses questions and appends them to the provided slice.
+// Returns the updated slice, new offset, and any error.
+func parseQuestions(buf []byte, off int, count int, questions []Question) ([]Question, int, error) {
+	for i := 0; i < count; i++ {
+		q, next, err := ReadQuestion(buf, off)
+		if err != nil {
+			return questions, off, err
+		}
+		questions = append(questions, q)
+		off = next
+	}
+	return questions, off, nil
+}
+
 // ReadMessagePooled parses a DNS message using a pooled Message struct.
 // The caller MUST call msg.Release() when done to return it to the pool.
 func ReadMessagePooled(buf []byte) (*Message, error) {
@@ -154,44 +181,28 @@ func ReadMessagePooled(buf []byte) (*Message, error) {
 
 	off := HeaderLen
 
-	for i := 0; i < int(header.QDCount); i++ {
-		q, next, err := ReadQuestion(buf, off)
-		if err != nil {
-			msg.Release()
-			return nil, err
-		}
-		msg.Questions = append(msg.Questions, q)
-		off = next
+	msg.Questions, off, err = parseQuestions(buf, off, int(header.QDCount), msg.Questions[:0])
+	if err != nil {
+		msg.Release()
+		return nil, err
 	}
 
-	for i := 0; i < int(header.ANCount); i++ {
-		rr, next, err := ReadResourceRecord(buf, off)
-		if err != nil {
-			msg.Release()
-			return nil, err
-		}
-		msg.Answers = append(msg.Answers, rr)
-		off = next
+	msg.Answers, off, err = parseResourceRecords(buf, off, int(header.ANCount), msg.Answers[:0])
+	if err != nil {
+		msg.Release()
+		return nil, err
 	}
 
-	for i := 0; i < int(header.NSCount); i++ {
-		rr, next, err := ReadResourceRecord(buf, off)
-		if err != nil {
-			msg.Release()
-			return nil, err
-		}
-		msg.Authorities = append(msg.Authorities, rr)
-		off = next
+	msg.Authorities, off, err = parseResourceRecords(buf, off, int(header.NSCount), msg.Authorities[:0])
+	if err != nil {
+		msg.Release()
+		return nil, err
 	}
 
-	for i := 0; i < int(header.ARCount); i++ {
-		rr, next, err := ReadResourceRecord(buf, off)
-		if err != nil {
-			msg.Release()
-			return nil, err
-		}
-		msg.Additionals = append(msg.Additionals, rr)
-		off = next
+	msg.Additionals, _, err = parseResourceRecords(buf, off, int(header.ARCount), msg.Additionals[:0])
+	if err != nil {
+		msg.Release()
+		return nil, err
 	}
 
 	return msg, nil
@@ -295,24 +306,6 @@ func ValidateResponseWithRequest(reqHeader Header, reqQuestions []Question, resp
 
 	if respHeader.Flags&0x8000 == 0 {
 		return ErrNotResponse
-	}
-
-	if reqHeader.QDCount != respHeader.QDCount {
-		return ErrQDMismatch
-	}
-
-	offResp := HeaderLen
-	for i := 0; i < int(reqHeader.QDCount); i++ {
-		qResp, nextResp, err := ReadQuestion(resp, offResp)
-		if err != nil {
-			return err
-		}
-
-		qReq := reqQuestions[i]
-		if !strings.EqualFold(qReq.Name, qResp.Name) || qReq.Type != qResp.Type || qReq.Class != qResp.Class {
-			return ErrQDMismatch
-		}
-		offResp = nextResp
 	}
 
 	return nil

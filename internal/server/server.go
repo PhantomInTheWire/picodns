@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 
 	"picodns/internal/config"
-	"picodns/internal/dns"
-	"picodns/internal/resolver"
+	"picodns/internal/pool"
+	"picodns/internal/types"
 )
 
 // queryJob represents a single DNS query to be processed
@@ -24,8 +24,8 @@ type queryJob struct {
 type Server struct {
 	cfg            config.Config
 	logger         *slog.Logger
-	resolver       resolver.Resolver
-	pool           sync.Pool
+	resolver       types.Resolver
+	bufPool        *pool.Bytes
 	jobQueue       chan queryJob
 	TotalQueries   atomic.Uint64
 	DroppedPackets atomic.Uint64
@@ -33,7 +33,7 @@ type Server struct {
 	WriteErrors    atomic.Uint64
 }
 
-func New(cfg config.Config, logger *slog.Logger, res resolver.Resolver) *Server {
+func New(cfg config.Config, logger *slog.Logger, res types.Resolver) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -41,12 +41,7 @@ func New(cfg config.Config, logger *slog.Logger, res resolver.Resolver) *Server 
 		cfg:      cfg,
 		logger:   logger,
 		resolver: res,
-		pool: sync.Pool{
-			New: func() any {
-				b := make([]byte, dns.MaxMessageSize)
-				return &b
-			},
-		},
+		bufPool:  pool.DefaultPool,
 		jobQueue: make(chan queryJob, cfg.Workers),
 	}
 }
@@ -60,8 +55,8 @@ func (s *Server) Start(ctx context.Context) error {
 	defer cancel()
 
 	var wg sync.WaitGroup
+	var readerWg sync.WaitGroup
 
-	// Start worker pool
 	for i := 0; i < s.cfg.Workers; i++ {
 		wg.Add(1)
 		go s.worker(ctx, &wg)
@@ -71,14 +66,16 @@ func (s *Server) Start(ctx context.Context) error {
 		conn, err := net.ListenPacket("udp", addr)
 		if err != nil {
 			cancel()
+			readerWg.Wait()
+			close(s.jobQueue)
 			wg.Wait()
 			return err
 		}
 		s.logger.Info("dns server listening", "listen", addr)
 
-		wg.Add(1)
+		readerWg.Add(1)
 		go func(c net.PacketConn) {
-			defer wg.Done()
+			defer readerWg.Done()
 			defer func() { _ = c.Close() }()
 
 			go func() {
@@ -87,11 +84,11 @@ func (s *Server) Start(ctx context.Context) error {
 			}()
 
 			for {
-				bufPtr := s.pool.Get().(*[]byte)
+				bufPtr := s.bufPool.Get()
 				buf := *bufPtr
 				n, addr, readErr := c.ReadFrom(buf)
 				if readErr != nil {
-					s.pool.Put(bufPtr)
+					s.bufPool.Put(bufPtr)
 					if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
 						return
 					}
@@ -104,7 +101,7 @@ func (s *Server) Start(ctx context.Context) error {
 				select {
 				case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, conn: c}:
 				default:
-					s.pool.Put(bufPtr)
+					s.bufPool.Put(bufPtr)
 					s.DroppedPackets.Add(1)
 					s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.DroppedPackets.Load())
 				}
@@ -114,6 +111,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	<-ctx.Done()
 	s.logger.Info("shutting down")
+	readerWg.Wait()
 	close(s.jobQueue)
 	wg.Wait()
 	s.logger.Info("server shutdown complete",
@@ -128,19 +126,18 @@ func (s *Server) worker(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for job := range s.jobQueue {
-		// Process the job
 		resp, cleanup, err := s.resolver.Resolve(ctx, (*job.dataPtr)[:job.n])
 		if err != nil {
 			s.HandlerErrors.Add(1)
 			s.logger.Error("handler error", "error", err)
-			s.pool.Put(job.dataPtr)
+			s.bufPool.Put(job.dataPtr)
 			continue
 		}
 		if len(resp) == 0 {
 			if cleanup != nil {
 				cleanup()
 			}
-			s.pool.Put(job.dataPtr)
+			s.bufPool.Put(job.dataPtr)
 			continue
 		}
 		if _, writeErr := job.conn.WriteTo(resp, job.addr); writeErr != nil {
@@ -150,6 +147,6 @@ func (s *Server) worker(ctx context.Context, wg *sync.WaitGroup) {
 		if cleanup != nil {
 			cleanup()
 		}
-		s.pool.Put(job.dataPtr)
+		s.bufPool.Put(job.dataPtr)
 	}
 }

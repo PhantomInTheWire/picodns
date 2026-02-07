@@ -1,7 +1,7 @@
-// Package dnsutil provides helper functions for DNS name manipulation and extraction.
-package dnsutil
+package dns
 
 import (
+	"encoding/binary"
 	"strings"
 )
 
@@ -27,7 +27,6 @@ func SplitLabels(name string) []string {
 	}
 	name = strings.TrimSuffix(name, ".")
 
-	// Count dots to pre-allocate slice
 	dotCount := strings.Count(name, ".")
 	labels := make([]string, 0, dotCount+1)
 
@@ -60,4 +59,46 @@ func IsSubdomain(child, parent string) bool {
 	}
 
 	return strings.HasSuffix(child, "."+parent)
+}
+
+// ExtractNameFromData extracts a domain name from resource record data,
+// using the full message buffer to resolve compression pointers.
+func ExtractNameFromData(fullMsg []byte, dataOffset int) string {
+	if len(fullMsg) == 0 || dataOffset >= len(fullMsg) {
+		return ""
+	}
+	name, _, err := DecodeName(fullMsg, dataOffset)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
+// BuildQuery constructs a DNS query message for the given name, type, and class.
+// It uses a maximum-size buffer to avoid calculation errors, as DNS messages
+// over UDP are limited to 512 bytes per RFC 1035.
+// Returns the serialized query as a byte slice.
+func BuildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
+	buf := make([]byte, MaxMessageSize)
+
+	header := Header{
+		ID:      id,
+		Flags:   FlagRD,
+		QDCount: 1,
+	}
+	if err := WriteHeader(buf, header); err != nil {
+		return nil, err
+	}
+
+	off := HeaderLen
+	off, err := EncodeName(buf, off, name)
+	if err != nil {
+		return nil, err
+	}
+
+	binary.BigEndian.PutUint16(buf[off:off+2], qtype)
+	binary.BigEndian.PutUint16(buf[off+2:off+4], qclass)
+	off += 4
+
+	return buf[:off], nil
 }

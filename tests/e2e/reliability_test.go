@@ -1,5 +1,3 @@
-//go:build e2e
-
 package e2e
 
 import (
@@ -11,39 +9,39 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"picodns/internal/cache"
 	"picodns/internal/config"
 	"picodns/internal/dns"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
+	"picodns/tests/testutil"
+
+	"github.com/stretchr/testify/require"
 )
 
+// TestE2ETCPFallback tests that the server correctly falls back to TCP
+// when a UDP response is truncated. It queries a domain that typically
+// has large responses (dns.google).
 func TestE2ETCPFallback(t *testing.T) {
 	requireNetwork(t)
 
 	upstreamServers := []string{"8.8.8.8:53"}
-	serverAddr, stopServer := startServerWithUpstreams(t, upstreamServers)
+	serverAddr, stopServer := testutil.StartServerWithUpstreams(t, upstreamServers)
 	defer stopServer()
 
-	// Query a domain that typically has large responses (dns.google has many records)
 	resp := sendQuery(t, serverAddr, "dns.google")
 	msg, err := dns.ReadMessagePooled(resp)
 	defer msg.Release()
 	require.NoError(t, err, "Failed to parse DNS response")
 
-	// Validate response header
 	require.True(t, msg.Header.Flags&0x8000 != 0, "QR bit should be set (response)")
 	require.GreaterOrEqual(t, msg.Header.ANCount, uint16(1), "Should have at least 1 answer")
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F, "Should have NOERROR rcode")
 
-	// Validate response is complete (not truncated)
 	require.False(t, msg.Header.Flags&0x0200 != 0, "Response should not be truncated (TC bit should not be set)")
 
-	// Validate we got actual answer records
 	require.GreaterOrEqual(t, len(msg.Answers), 1, "Should have at least 1 answer record")
 
-	// Check that the response is valid and complete
 	for _, answer := range msg.Answers {
 		require.True(t, answer.Type == dns.TypeA || answer.Type == dns.TypeAAAA || answer.Type == dns.TypeCNAME,
 			"Answer should be a valid record type (A, AAAA, or CNAME)")
@@ -53,7 +51,7 @@ func TestE2ETCPFallback(t *testing.T) {
 func TestE2EBackpressure(t *testing.T) {
 	upstreamConn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer upstreamConn.Close()
+	defer func() { _ = upstreamConn.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -125,12 +123,10 @@ func TestE2EBackpressure(t *testing.T) {
 	defer msg.Release()
 	require.NoError(t, err, "Failed to parse DNS response")
 
-	// Validate response header
 	require.True(t, msg.Header.Flags&0x8000 != 0, "QR bit should be set (response)")
 	require.Equal(t, uint16(1), msg.Header.ANCount, "Should have 1 answer")
 	require.Equal(t, uint16(dns.RcodeSuccess), msg.Header.Flags&0x000F, "Should have NOERROR rcode")
 
-	// Validate answer content
 	require.Len(t, msg.Answers, 1, "Should have exactly 1 answer")
 	answer := msg.Answers[0]
 	require.Equal(t, dns.TypeA, answer.Type, "Answer should be Type A")
@@ -143,7 +139,7 @@ func sendQuerySilent(addr string, name string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := makeQuery(name)
 	_ = conn.SetDeadline(time.Now().Add(100 * time.Millisecond))

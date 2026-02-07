@@ -7,11 +7,10 @@ import (
 	"errors"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"picodns/internal/dns"
-	"picodns/internal/dnsutil"
+	"picodns/internal/pool"
 )
 
 // defaultRootServers contains the default DNS root server addresses.
@@ -43,6 +42,14 @@ func WithRootServers(servers []string) Option {
 	}
 }
 
+// WithTransport sets a custom transport for the recursive resolver.
+// This is primarily used for testing with mock transports.
+func WithTransport(transport Transport) Option {
+	return func(r *Recursive) {
+		r.transport = transport
+	}
+}
+
 const (
 	maxRecursionDepth = 32
 	defaultTimeout    = 5 * time.Second
@@ -71,7 +78,8 @@ func secureRandUint16() uint16 {
 // Recursive is a recursive DNS resolver that performs iterative resolution
 // starting from root servers and following referrals.
 type Recursive struct {
-	pool        sync.Pool
+	transport   Transport
+	bufPool     *pool.Bytes
 	connPool    *connPool
 	rootServers []string
 }
@@ -80,17 +88,15 @@ type Recursive struct {
 // If no options are provided, the resolver uses default root servers.
 func NewRecursive(opts ...Option) *Recursive {
 	r := &Recursive{
+		bufPool:     pool.DefaultPool,
 		connPool:    newConnPool(),
 		rootServers: defaultRootServers,
 	}
-	r.pool = sync.Pool{
-		New: func() any {
-			b := make([]byte, 4096)
-			return &b
-		},
-	}
 	for _, opt := range opts {
 		opt(r)
+	}
+	if r.transport == nil {
+		r.transport = NewTransport(r.bufPool, r.connPool, defaultTimeout)
 	}
 	return r
 }
@@ -111,6 +117,10 @@ func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), er
 }
 
 // resolveIterative performs iterative DNS resolution starting from root servers.
+// It follows referrals until it gets an answer or reaches max depth.
+// It rebuilds queries if the name changes (e.g. following CNAME) and
+// performs bailiwick checking: root can provide glue for any TLD, but
+// TLDs should only provide glue for in-bailiwick nameservers.
 func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, questions []dns.Question, name string, depth int, seenCnames map[string]struct{}) ([]byte, func(), error) {
 	if depth >= maxRecursionDepth {
 		return nil, nil, ErrMaxDepth
@@ -118,33 +128,28 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 
 	q := questions[0]
 	servers := r.rootServers
-	var labelsBuf [16]string
-	labelCount := splitLabelsInto(name, labelsBuf[:])
-	labels := labelsBuf[:labelCount]
+	zone := "."
 
-	// Rebuild query for this specific name/type if it's different from original (e.g. following CNAME)
-	query, err := dnsutil.BuildQuery(reqHeader.ID, name, q.Type, q.Class)
+	query, err := dns.BuildQuery(reqHeader.ID, name, q.Type, q.Class)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	for i := len(labels); i >= 0; i-- {
-		zone := dnsutil.JoinLabels(labels[i:])
-		if zone != "." {
-			zone = dnsutil.NormalizeName(zone)
-		}
+	for range maxRecursionDepth {
+		var gotReferral bool
+		var lastErr error
 
 		for _, server := range servers {
 			resp, cleanup, err := r.queryServer(ctx, server, query, reqHeader, questions)
 			if err != nil {
+				lastErr = err
 				continue
 			}
 
 			respMsg, err := dns.ReadMessagePooled(resp)
 			if err != nil {
-				if cleanup != nil {
-					cleanup()
-				}
+				cleanupBoth(nil, cleanup)
+				lastErr = err
 				continue
 			}
 
@@ -155,7 +160,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 							continue
 						}
 
-						cnameTarget := dnsutil.ExtractNameFromData(resp, ans.DataOffset)
+						cnameTarget := dns.ExtractNameFromData(resp, ans.DataOffset)
 						if cnameTarget == "" {
 							continue
 						}
@@ -164,18 +169,12 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 							seenCnames = make(map[string]struct{})
 						}
 						if _, seen := seenCnames[cnameTarget]; seen {
-							respMsg.Release()
-							if cleanup != nil {
-								cleanup()
-							}
+							cleanupBoth(respMsg, cleanup)
 							return nil, nil, ErrCnameLoop
 						}
 						seenCnames[cnameTarget] = struct{}{}
 
-						respMsg.Release()
-						if cleanup != nil {
-							cleanup()
-						}
+						cleanupBoth(respMsg, cleanup)
 						return r.resolveIterative(ctx, reqHeader, questions, cnameTarget, depth+1, seenCnames)
 					}
 				}
@@ -190,76 +189,85 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			}
 
 			if len(respMsg.Authorities) > 0 {
-				nsServers, glueIPs := extractReferral(resp, *respMsg, zone)
+				childZone := zone
+				for _, auth := range respMsg.Authorities {
+					if auth.Type == dns.TypeNS {
+						authZone := dns.NormalizeName(auth.Name)
+						if authZone != "" {
+							childZone = authZone
+							break
+						}
+					}
+				}
+
+				bailiwickZone := zone
+				if zone != "." {
+					bailiwickZone = childZone
+				}
+				nsServers, glueIPs := extractReferral(resp, *respMsg, bailiwickZone)
 				respMsg.Release()
 				if len(nsServers) == 0 {
-					if cleanup != nil {
-						cleanup()
-					}
+					cleanupBoth(nil, cleanup)
+					lastErr = ErrNoNameservers
 					continue
 				}
 
 				if len(glueIPs) > 0 {
 					servers = glueIPs
-					if cleanup != nil {
-						cleanup()
-					}
+					cleanupBoth(nil, cleanup)
 				} else {
 					resolvedIPs, err := r.resolveNSNames(ctx, nsServers, depth+1, seenCnames)
-					if cleanup != nil {
-						cleanup()
-					}
+					cleanupBoth(nil, cleanup)
 					if err != nil {
+						lastErr = err
 						continue
 					}
 					servers = resolvedIPs
 				}
 
+				zone = childZone
+				gotReferral = true
 				break
 			}
-			respMsg.Release()
-			if cleanup != nil {
-				cleanup()
+			cleanupBoth(respMsg, cleanup)
+		}
+
+		if !gotReferral {
+			if lastErr != nil {
+				return nil, nil, lastErr
 			}
+			return nil, nil, ErrNoNameservers
 		}
 	}
 
-	return nil, nil, ErrNoNameservers
+	return nil, nil, ErrMaxDepth
 }
 
 func (r *Recursive) queryServer(ctx context.Context, server string, req []byte, reqHeader dns.Header, questions []dns.Question) ([]byte, func(), error) {
-	raddr, err := net.ResolveUDPAddr("udp", server)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	resp, cleanup, needsTCP, err := queryUDP(ctx, raddr, req, defaultTimeout, &r.pool, r.connPool, false)
+	resp, cleanup, err := r.transport.Query(ctx, server, req)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if err := dns.ValidateResponseWithRequest(reqHeader, questions, resp); err != nil {
-		cleanup()
+		if cleanup != nil {
+			cleanup()
+		}
 		return nil, nil, err
 	}
 
-	if needsTCP {
-		cleanup()
-		respTCP, err := r.queryServerTCP(ctx, server, req, reqHeader, questions)
-		return respTCP, nil, err
-	}
 	return resp, cleanup, nil
 }
 
-func (r *Recursive) queryServerTCP(ctx context.Context, server string, req []byte, reqHeader dns.Header, questions []dns.Question) ([]byte, error) {
-	resp, err := tcpQuery(ctx, server, req, defaultTimeout, false)
-	if err != nil {
-		return nil, err
+// cleanupBoth releases a pooled message and executes a cleanup function.
+// It safely handles nil cleanup functions.
+func cleanupBoth(msg *dns.Message, cleanup func()) {
+	if msg != nil {
+		msg.Release()
 	}
-	if err := dns.ValidateResponseWithRequest(reqHeader, questions, resp); err != nil {
-		return nil, err
+	if cleanup != nil {
+		cleanup()
 	}
-	return resp, nil
 }
 
 // resolveNSNames resolves the IP addresses of nameservers when glue records are missing.
@@ -282,7 +290,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 
 		respMsg, err := dns.ReadMessagePooled(resp)
 		if err != nil {
-			cleanup()
+			cleanupBoth(nil, cleanup)
 			continue
 		}
 
@@ -292,8 +300,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 				ips = append(ips, ip)
 			}
 		}
-		respMsg.Release()
-		cleanup()
+		cleanupBoth(respMsg, cleanup)
 	}
 
 	if len(ips) == 0 {
@@ -303,49 +310,25 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	return ips, nil
 }
 
-func splitLabelsInto(name string, labels []string) int {
-	if name == "" || name == "." {
-		return 0
-	}
-	name = strings.TrimSuffix(name, ".")
-
-	count := 0
-	start := 0
-	for i := 0; i < len(name) && count < len(labels); i++ {
-		if name[i] == '.' {
-			if i > start {
-				labels[count] = name[start:i]
-				count++
-			}
-			start = i + 1
-		}
-	}
-	if start < len(name) && count < len(labels) {
-		labels[count] = name[start:]
-		count++
-	}
-	return count
-}
-
 // extractReferral extracts nameserver names and their associated glue record IPs from a DNS message.
 // It validates that NS records are in-bailiwick to prevent cache poisoning.
 func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []string) {
 	var nsNames []string
 	nsIPs := make(map[string][]string)
 
-	zoneNorm := strings.ToLower(strings.TrimSuffix(zone, "."))
+	zoneNorm := dns.NormalizeName(zone)
 
 	for _, rr := range msg.Authorities {
 		if rr.Type == dns.TypeNS {
-			nsOwner := strings.ToLower(strings.TrimSuffix(rr.Name, "."))
+			nsOwner := dns.NormalizeName(rr.Name)
 
 			if zoneNorm != "" {
-				if !dnsutil.IsSubdomain(nsOwner, zoneNorm) && nsOwner != zoneNorm {
+				if !dns.IsSubdomain(nsOwner, zoneNorm) && nsOwner != zoneNorm {
 					continue
 				}
 			}
 
-			nsName := dnsutil.ExtractNameFromData(fullMsg, rr.DataOffset)
+			nsName := dns.ExtractNameFromData(fullMsg, rr.DataOffset)
 			if nsName != "" {
 				nsNames = append(nsNames, nsName)
 			}
@@ -362,8 +345,8 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 	var glueIPs []string
 	for _, nsName := range nsNames {
 		if zoneNorm != "" {
-			nsNameNorm := strings.ToLower(strings.TrimSuffix(nsName, "."))
-			if !dnsutil.IsSubdomain(nsNameNorm, zoneNorm) {
+			nsNameNorm := dns.NormalizeName(nsName)
+			if !dns.IsSubdomain(nsNameNorm, zoneNorm) {
 				continue
 			}
 		}

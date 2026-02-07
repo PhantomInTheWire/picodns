@@ -4,10 +4,10 @@ test:
 	go test ./...
 
 test-e2e:
-	go test -tags=e2e ./tests/e2e
+	go test ./tests/e2e
 
 test-e2e-network:
-	E2E_REAL_NETWORK=1 go test -tags=e2e ./tests/e2e/... -v -timeout 120s
+	E2E_REAL_NETWORK=1 go test ./tests/e2e/... -v -timeout 120s
 
 test-race:
 	go test -race ./...

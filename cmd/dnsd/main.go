@@ -13,6 +13,7 @@ import (
 	"picodns/internal/config"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
+	"picodns/internal/types"
 )
 
 func main() {
@@ -29,7 +30,7 @@ func main() {
 
 	cacheStore := cache.New(cfg.CacheSize, nil)
 
-	var res resolver.Resolver
+	var res types.Resolver
 	if cfg.Recursive || len(cfg.Upstreams) == 0 {
 		logger.Info("using recursive resolver")
 		res = resolver.NewCached(cacheStore, resolver.NewRecursive())

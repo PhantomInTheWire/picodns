@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"picodns/internal/dns"
 )
 
 func TestUpstreamResolve(t *testing.T) {
@@ -14,27 +15,43 @@ func TestUpstreamResolve(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
+	// Create a valid DNS query
+	reqBuf := make([]byte, 512)
+	_ = dns.WriteHeader(reqBuf, dns.Header{ID: 0x1234, Flags: 0x0100, QDCount: 1})
+	end, _ := dns.WriteQuestion(reqBuf, dns.HeaderLen, dns.Question{Name: "test.example.com", Type: dns.TypeA, Class: dns.ClassIN})
+	req := reqBuf[:end]
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		buf := make([]byte, 256)
-		n, addr, readErr := conn.ReadFrom(buf)
-		if readErr != nil {
+		buf := make([]byte, 512)
+		n, addr, _ := conn.ReadFrom(buf)
+		if n == 0 {
 			return
 		}
-		if n > 0 {
-			_, _ = conn.WriteTo([]byte{1, 2, 3}, addr)
-		}
+
+		resp, _ := dns.BuildResponse(buf[:n], []dns.Answer{
+			{Name: "", Type: dns.TypeA, Class: dns.ClassIN, TTL: 300, RData: net.ParseIP("192.0.2.1").To4()},
+		}, dns.RcodeSuccess)
+		_, _ = conn.WriteTo(resp, addr)
 	}()
 
 	r, err := NewUpstream([]string{conn.LocalAddr().String()})
 	require.NoError(t, err)
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	resp, _, err := r.Resolve(ctx, []byte{9, 9, 9})
+	resp, cleanup, err := r.Resolve(ctx, req)
 	require.NoError(t, err)
-	require.Equal(t, []byte{1, 2, 3}, resp)
+	defer cleanup()
+
+	respMsg, err := dns.ReadMessagePooled(resp)
+	require.NoError(t, err)
+	defer respMsg.Release()
+
+	require.GreaterOrEqual(t, len(respMsg.Answers), 1)
+	require.Equal(t, uint16(0x1234), respMsg.Header.ID)
 
 	<-done
 }

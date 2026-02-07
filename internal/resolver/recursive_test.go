@@ -2,157 +2,50 @@ package resolver
 
 import (
 	"encoding/binary"
+	"net"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"picodns/internal/dns"
-	"picodns/internal/dnsutil"
+	"picodns/tests/testutil/dnstest"
 )
 
 func TestExtractReferral_InBailiwick(t *testing.T) {
-	// Build a DNS message with in-bailiwick glue
-	// example.com NS ns1.example.com
-	// ns1.example.com A 192.0.2.1
+	req := dnstest.MakeQuery("example.com", dns.TypeA)
+	buf := dnstest.BuildReferralResponse(t, req,
+		[]dns.Answer{dnstest.NSRecord("example.com", "ns1.example.com", 86400)},
+		[]dns.Answer{dnstest.ARecord("ns1.example.com", net.ParseIP("192.0.2.1"), 86400)},
+	)
 
-	buf := make([]byte, dns.MaxMessageSize)
-	off := dns.HeaderLen
-
-	// Question section
-	off, _ = dns.EncodeName(buf, off, "example.com")
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.TypeA)
-	binary.BigEndian.PutUint16(buf[off+2:off+4], dns.ClassIN)
-	off += 4
-
-	// Authority section: example.com NS ns1.example.com
-	// Owner name
-	off, _ = dns.EncodeName(buf, off, "example.com")
-	// Type NS
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.TypeNS)
-	off += 2
-	// Class IN
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.ClassIN)
-	off += 2
-	// TTL
-	binary.BigEndian.PutUint32(buf[off:off+4], 86400)
-	off += 4
-	// Save position for RDLENGTH, encode NS target, then fill in length
-	rdlenPos := off
-	off += 2
-	nsDataStart := off
-	off, _ = dns.EncodeName(buf, off, "ns1.example.com")
-	nsDataLen := off - nsDataStart
-	binary.BigEndian.PutUint16(buf[rdlenPos:rdlenPos+2], uint16(nsDataLen))
-
-	// Additional section: ns1.example.com A 192.0.2.1
-	off, _ = dns.EncodeName(buf, off, "ns1.example.com")
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.TypeA)
-	off += 2
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.ClassIN)
-	off += 2
-	binary.BigEndian.PutUint32(buf[off:off+4], 86400)
-	off += 4
-	binary.BigEndian.PutUint16(buf[off:off+2], 4) // IP address length
-	off += 2
-	copy(buf[off:off+4], []byte{192, 0, 2, 1})
-	off += 4
-
-	// Set header
-	header := dns.Header{
-		ID:      1,
-		Flags:   dns.FlagQR,
-		QDCount: 1,
-		NSCount: 1,
-		ARCount: 1,
-	}
-	err := dns.WriteHeader(buf, header)
-	require.NoError(t, err)
-
-	msg, err := dns.ReadMessagePooled(buf[:off])
+	msg, err := dns.ReadMessagePooled(buf)
 	require.NoError(t, err)
 	defer msg.Release()
 
 	nsNames, glueIPs := extractReferral(buf, *msg, "example.com")
 
-	// Should have one NS name
 	require.Len(t, nsNames, 1)
 	require.Equal(t, "ns1.example.com", nsNames[0])
-
-	// Should have glue IP (in-bailiwick)
 	require.Len(t, glueIPs, 1)
 	require.Equal(t, "192.0.2.1:53", glueIPs[0])
 }
 
 func TestExtractReferral_OutOfBailiwick(t *testing.T) {
-	// Build a DNS message with out-of-bailiwick glue (attack scenario)
-	// example.com NS ns.evil.com
-	// ns.evil.com A 1.2.3.4 (should be ignored)
+	req := dnstest.MakeQuery("example.com", dns.TypeA)
+	buf := dnstest.BuildReferralResponse(t, req,
+		[]dns.Answer{dnstest.NSRecord("example.com", "ns.evil.com", 86400)},
+		[]dns.Answer{dnstest.ARecord("ns.evil.com", net.ParseIP("1.2.3.4"), 86400)},
+	)
 
-	buf := make([]byte, dns.MaxMessageSize)
-	off := dns.HeaderLen
-
-	// Question section
-	off, _ = dns.EncodeName(buf, off, "example.com")
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.TypeA)
-	binary.BigEndian.PutUint16(buf[off+2:off+4], dns.ClassIN)
-	off += 4
-
-	// Authority section: example.com NS ns.evil.com
-	// Owner name
-	off, _ = dns.EncodeName(buf, off, "example.com")
-	// Type NS
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.TypeNS)
-	off += 2
-	// Class IN
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.ClassIN)
-	off += 2
-	// TTL
-	binary.BigEndian.PutUint32(buf[off:off+4], 86400)
-	off += 4
-	// Save position for RDLENGTH, encode NS target, then fill in length
-	rdlenPos := off
-	off += 2
-	nsDataStart := off
-	off, _ = dns.EncodeName(buf, off, "ns.evil.com")
-	nsDataLen := off - nsDataStart
-	binary.BigEndian.PutUint16(buf[rdlenPos:rdlenPos+2], uint16(nsDataLen))
-
-	// Additional section: ns.evil.com A 1.2.3.4 (out-of-bailiwick, should be ignored)
-	off, _ = dns.EncodeName(buf, off, "ns.evil.com")
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.TypeA)
-	off += 2
-	binary.BigEndian.PutUint16(buf[off:off+2], dns.ClassIN)
-	off += 2
-	binary.BigEndian.PutUint32(buf[off:off+4], 86400)
-	off += 4
-	binary.BigEndian.PutUint16(buf[off:off+2], 4) // IP address length
-	off += 2
-	copy(buf[off:off+4], []byte{1, 2, 3, 4})
-	off += 4
-
-	// Set header
-	header := dns.Header{
-		ID:      1,
-		Flags:   dns.FlagQR,
-		QDCount: 1,
-		NSCount: 1,
-		ARCount: 1,
-	}
-	err := dns.WriteHeader(buf, header)
-	require.NoError(t, err)
-
-	msg, err := dns.ReadMessagePooled(buf[:off])
+	msg, err := dns.ReadMessagePooled(buf)
 	require.NoError(t, err)
 	defer msg.Release()
 
 	nsNames, glueIPs := extractReferral(buf, *msg, "example.com")
 
-	// Should have one NS name
 	require.Len(t, nsNames, 1)
 	require.Equal(t, "ns.evil.com", nsNames[0])
-
-	// Should have NO glue IPs (out-of-bailiwick should be ignored)
-	require.Len(t, glueIPs, 0)
+	require.Len(t, glueIPs, 0) // Out-of-bailiwick glue should be ignored
 }
 
 type cnameStep struct {
@@ -285,7 +178,7 @@ func TestExtractReferral_CaseInsensitiveCNAME(t *testing.T) {
 	require.Equal(t, dns.TypeCNAME, ans.Type)
 	require.Equal(t, "WWW.EXAMPLE.COM", ans.Name)
 
-	cnameTarget := dnsutil.ExtractNameFromData(buf, ans.DataOffset)
+	cnameTarget := dns.ExtractNameFromData(buf, ans.DataOffset)
 	require.Equal(t, "target.example.com", cnameTarget)
 
 	queryName := "www.example.com"

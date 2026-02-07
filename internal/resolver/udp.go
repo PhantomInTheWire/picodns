@@ -5,15 +5,56 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	"picodns/internal/dns"
+	"picodns/internal/pool"
 )
+
+// Transport is the interface for DNS query transports.
+type Transport interface {
+	Query(ctx context.Context, server string, req []byte) (resp []byte, cleanup func(), err error)
+}
+
+// udpTransport implements Transport using UDP with TCP fallback.
+type udpTransport struct {
+	bufPool  *pool.Bytes
+	connPool *connPool
+	timeout  time.Duration
+}
+
+func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration) Transport {
+	return &udpTransport{
+		bufPool:  bufPool,
+		connPool: connPool,
+		timeout:  timeout,
+	}
+}
+
+func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]byte, func(), error) {
+	raddr, err := net.ResolveUDPAddr("udp", server)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if needsTCP {
+		release()
+		resp, err := tcpQueryWithValidation(ctx, server, req, t.timeout, true)
+		return resp, nil, err
+	}
+
+	return resp, release, nil
+}
 
 // queryUDP performs a UDP DNS query. The caller must call release() when done with resp.
 // If cp is nil, a new connection is created for this query.
-func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, pool *sync.Pool, cp *connPool, validate bool) (resp []byte, release func(), needsTCP bool, err error) {
+// It returns a slice of a pooled buffer; the caller owns the buffer until release is called.
+func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, bufPool *pool.Bytes, cp *connPool, validate bool) (resp []byte, release func(), needsTCP bool, err error) {
 	var conn *net.UDPConn
 	var connRelease func()
 
@@ -51,21 +92,20 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 		return nil, nil, false, err
 	}
 
-	bufPtr := pool.Get().(*[]byte)
+	bufPtr := bufPool.Get()
 	buf := *bufPtr
 
 	n, _, err := conn.ReadFrom(buf)
 	if err != nil {
-		pool.Put(bufPtr)
+		bufPool.Put(bufPtr)
 		rel()
 		return nil, nil, false, err
 	}
 
-	// Return slice of pooled buffer - caller owns bufPtr now
 	resp = buf[:n]
 
 	finalRelease := func() {
-		pool.Put(bufPtr)
+		bufPool.Put(bufPtr)
 		rel()
 	}
 
@@ -84,9 +124,9 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 	return resp, finalRelease, false, nil
 }
 
-// tcpQuery performs a TCP DNS query to the given server.
+// tcpQueryWithValidation performs a TCP DNS query to the given server.
 // If validate is true, it validates the response against the request.
-func tcpQuery(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
+func tcpQueryWithValidation(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", server)
 	if err != nil {
