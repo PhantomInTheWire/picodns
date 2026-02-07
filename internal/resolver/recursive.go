@@ -13,7 +13,9 @@ import (
 	"picodns/internal/dns"
 )
 
-var rootServers = []string{
+// defaultRootServers contains the default DNS root server addresses.
+// These are used when no custom root servers are provided.
+var defaultRootServers = []string{
 	"198.41.0.4:53",     // a.root-servers.net
 	"199.9.14.201:53",   // b.root-servers.net
 	"192.33.4.12:53",    // c.root-servers.net
@@ -27,6 +29,17 @@ var rootServers = []string{
 	"193.0.14.129:53",   // k.root-servers.net
 	"199.7.83.42:53",    // l.root-servers.net
 	"202.12.27.33:53",   // m.root-servers.net
+}
+
+// Option is a functional option for configuring the Recursive resolver.
+type Option func(*Recursive)
+
+// WithRootServers sets custom root servers for the recursive resolver.
+// If not provided, the resolver uses the default root servers.
+func WithRootServers(servers []string) Option {
+	return func(r *Recursive) {
+		r.rootServers = servers
+	}
 }
 
 const (
@@ -54,20 +67,29 @@ func secureRandUint16() uint16 {
 	return binary.BigEndian.Uint16(b[:])
 }
 
+// Recursive is a recursive DNS resolver that performs iterative resolution
+// starting from root servers and following referrals.
 type Recursive struct {
-	pool     sync.Pool
-	connPool *connPool
+	pool        sync.Pool
+	connPool    *connPool
+	rootServers []string
 }
 
-func NewRecursive() *Recursive {
+// NewRecursive creates a new recursive DNS resolver with the provided options.
+// If no options are provided, the resolver uses default root servers.
+func NewRecursive(opts ...Option) *Recursive {
 	r := &Recursive{
-		connPool: newConnPool(),
+		connPool:    newConnPool(),
+		rootServers: defaultRootServers,
 	}
 	r.pool = sync.Pool{
 		New: func() any {
 			b := make([]byte, 4096)
 			return &b
 		},
+	}
+	for _, opt := range opts {
+		opt(r)
 	}
 	return r
 }
@@ -94,7 +116,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 	}
 
 	q := questions[0]
-	servers := rootServers
+	servers := r.rootServers
 	var labelsBuf [16]string
 	labelCount := splitLabelsInto(name, labelsBuf[:])
 	labels := labelsBuf[:labelCount]
