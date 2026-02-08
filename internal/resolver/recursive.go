@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -166,17 +165,11 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			err     error
 		}
 
-		sort.Slice(servers, func(i, j int) bool {
-			return r.rttTracker.Get(servers[i]) < r.rttTracker.Get(servers[j])
-		})
-
 		maxServers := defaultMaxServers
 		if isGlue {
 			maxServers = glueMaxServers
 		}
-		if len(servers) > maxServers {
-			servers = servers[:maxServers]
-		}
+		servers = r.rttTracker.SortBest(servers, maxServers)
 
 		resultChan := make(chan queryResult, len(servers))
 		queryCtx, cancelQueries := context.WithCancel(ctx)

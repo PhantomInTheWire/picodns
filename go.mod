@@ -2,7 +2,10 @@ module picodns
 
 go 1.25
 
-require github.com/stretchr/testify v1.11.1
+require (
+	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/stretchr/testify v1.11.1
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

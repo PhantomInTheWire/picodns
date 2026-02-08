@@ -1,10 +1,12 @@
 package resolver
 
 import (
+	"container/heap"
 	"context"
 	"encoding/binary"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"picodns/internal/cache"
@@ -196,8 +198,9 @@ func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string
 
 // rttTracker tracks nameserver response times
 type rttTracker struct {
-	mu   sync.RWMutex
-	rtts map[string]time.Duration
+	mu    sync.RWMutex
+	rtts  map[string]time.Duration
+	dirty atomic.Bool
 }
 
 func newRTTTracker() *rttTracker {
@@ -208,13 +211,14 @@ func newRTTTracker() *rttTracker {
 
 func (t *rttTracker) Update(server string, d time.Duration) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	prev, ok := t.rtts[server]
 	if !ok {
 		t.rtts[server] = d
 	} else {
 		t.rtts[server] = (prev*4 + d) / 5
 	}
+	t.mu.Unlock()
+	t.dirty.Store(true)
 }
 
 func (t *rttTracker) Get(server string) time.Duration {
@@ -225,4 +229,68 @@ func (t *rttTracker) Get(server string) time.Duration {
 		return 200 * time.Millisecond
 	}
 	return d
+}
+
+// SortBest selects the best n servers from the provided list.
+// It uses a heap-based selection to find the top n in O(m log n) where m is len(servers).
+// Max-Heap of size n to find smallest RTTs
+func (t *rttTracker) SortBest(servers []string, n int) []string {
+	if len(servers) <= 1 {
+		return servers
+	}
+	if n <= 0 {
+		return nil
+	}
+	if n > len(servers) {
+		n = len(servers)
+	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	h := &serverHeap{
+		servers: make([]serverRTT, 0, n),
+	}
+
+	for _, srv := range servers {
+		rtt, ok := t.rtts[srv]
+		if !ok {
+			rtt = 200 * time.Millisecond
+		}
+
+		if h.Len() < n {
+			heap.Push(h, serverRTT{name: srv, rtt: rtt})
+		} else if rtt < h.servers[0].rtt {
+			h.servers[0] = serverRTT{name: srv, rtt: rtt}
+			heap.Fix(h, 0)
+		}
+	}
+
+	result := make([]string, h.Len())
+	for i := h.Len() - 1; i >= 0; i-- {
+		result[i] = heap.Pop(h).(serverRTT).name
+	}
+	return result
+}
+
+type serverRTT struct {
+	name string
+	rtt  time.Duration
+}
+
+// serverHeap is a Max-Heap of serverRTT based on rtt
+type serverHeap struct {
+	servers []serverRTT
+}
+
+func (h *serverHeap) Len() int           { return len(h.servers) }
+func (h *serverHeap) Less(i, j int) bool { return h.servers[i].rtt > h.servers[j].rtt }
+func (h *serverHeap) Swap(i, j int)      { h.servers[i], h.servers[j] = h.servers[j], h.servers[i] }
+func (h *serverHeap) Push(x any)         { h.servers = append(h.servers, x.(serverRTT)) }
+func (h *serverHeap) Pop() any {
+	old := h.servers
+	n := len(old)
+	x := old[n-1]
+	h.servers = old[0 : n-1]
+	return x
 }

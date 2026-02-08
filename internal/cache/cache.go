@@ -5,15 +5,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"picodns/internal/dns"
 )
 
 type Clock func() time.Time
 
+// Cache is a sharded LRU cache for DNS questions.
 type Cache struct {
+	shards    []*cacheShard
+	shardMask uint64
+	clock     Clock
+}
+
+type cacheShard struct {
 	mu    sync.Mutex
 	max   int
-	clock Clock
 	items map[dns.Question]*list.Element
 	lru   *list.List
 }
@@ -26,19 +33,54 @@ type entry struct {
 	origTTL time.Duration
 }
 
+// New creates a new sharded Cache with the given maximum total entries.
+// Each shard will have a capacity of max/numShards.
+// Use single shard for very small caches to maintain predictable eviction
 func New(max int, clock Clock) *Cache {
 	if clock == nil {
 		clock = time.Now
 	}
+
+	numShards := 256
+	if max > 0 && max < 256 {
+		numShards = 1
+	}
+
+	shardMax := max / numShards
+	if shardMax == 0 && max > 0 {
+		shardMax = 1
+	}
+
 	c := &Cache{
-		max:   max,
-		clock: clock,
+		shards:    make([]*cacheShard, numShards),
+		shardMask: uint64(numShards - 1),
+		clock:     clock,
 	}
-	if max > 0 {
-		c.items = make(map[dns.Question]*list.Element)
-		c.lru = list.New()
+
+	for i := 0; i < numShards; i++ {
+		c.shards[i] = &cacheShard{
+			max:   shardMax,
+			items: make(map[dns.Question]*list.Element),
+			lru:   list.New(),
+		}
 	}
+
 	return c
+}
+
+// Use xxhash for fast distribution.
+// We hash the normalized name, type, and class to ensure consistent sharding.
+// Combine with type and class using simple XOR/shift for speed
+func (c *Cache) getShard(key dns.Question) *cacheShard {
+	if len(c.shards) == 1 {
+		return c.shards[0]
+	}
+
+	h := xxhash.Sum64String(key.Name)
+	h ^= uint64(key.Type) << 32
+	h ^= uint64(key.Class)
+
+	return c.shards[h&c.shardMask]
 }
 
 func (c *Cache) Get(key dns.Question) ([]byte, bool) {
@@ -47,63 +89,70 @@ func (c *Cache) Get(key dns.Question) ([]byte, bool) {
 }
 
 func (c *Cache) GetWithMetadata(key dns.Question) (value []byte, expires time.Time, hits uint64, origTTL time.Duration, ok bool) {
-	if c.items == nil {
-		return nil, time.Time{}, 0, 0, false
-	}
 	key = key.Normalize()
+	shard := c.getShard(key)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
-	elem, ok := c.items[key]
+	elem, ok := shard.items[key]
 	if !ok {
 		return nil, time.Time{}, 0, 0, false
 	}
+
 	item := elem.Value.(*entry)
 	if !item.expires.IsZero() && c.clock().After(item.expires) {
-		c.removeElement(elem)
+		shard.removeElement(elem)
 		return nil, time.Time{}, 0, 0, false
 	}
+
 	item.hits++
-	c.lru.MoveToFront(elem)
+	shard.lru.MoveToFront(elem)
 	return item.value, item.expires, item.hits, item.origTTL, true
 }
 
 func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
-	if c.items == nil || ttl <= 0 {
+	if ttl <= 0 {
 		return false
 	}
 	key = key.Normalize()
+	shard := c.getShard(key)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
 	expires := c.clock().Add(ttl)
-	if elem, ok := c.items[key]; ok {
+	if elem, ok := shard.items[key]; ok {
 		item := elem.Value.(*entry)
-		item.value = append([]byte(nil), value...)
+		// Reuse buffer if possible to reduce allocations
+		if cap(item.value) >= len(value) {
+			item.value = item.value[:len(value)]
+			copy(item.value, value)
+		} else {
+			item.value = append([]byte(nil), value...)
+		}
 		item.expires = expires
 		item.origTTL = ttl
-		c.lru.MoveToFront(elem)
+		shard.lru.MoveToFront(elem)
 		return true
 	}
 
-	elem := c.lru.PushFront(&entry{
+	elem := shard.lru.PushFront(&entry{
 		key:     key,
 		value:   append([]byte(nil), value...),
 		expires: expires,
 		origTTL: ttl,
 		hits:    1,
 	})
-	c.items[key] = elem
+	shard.items[key] = elem
 
-	if c.lru.Len() > c.max {
-		c.removeElement(c.lru.Back())
+	if shard.lru.Len() > shard.max {
+		shard.removeElement(shard.lru.Back())
 	}
 	return true
 }
 
-func (c *Cache) removeElement(elem *list.Element) {
-	delete(c.items, elem.Value.(*entry).key)
-	c.lru.Remove(elem)
+func (s *cacheShard) removeElement(elem *list.Element) {
+	delete(s.items, elem.Value.(*entry).key)
+	s.lru.Remove(elem)
 }
