@@ -47,8 +47,13 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	}
 	q := reqMsg.Questions[0]
 	reqHeader := reqMsg.Header
-	questions := make([]dns.Question, len(reqMsg.Questions))
-	copy(questions, reqMsg.Questions)
+	var questions []dns.Question
+	if len(reqMsg.Questions) == 1 {
+		questions = reqMsg.Questions
+	} else {
+		questions = make([]dns.Question, len(reqMsg.Questions))
+		copy(questions, reqMsg.Questions)
+	}
 
 	if cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID); ok {
 		if c.prefetch && hits > prefetchThreshold {
@@ -273,16 +278,25 @@ func (c *delegationCache) Set(zone string, servers []string, ttl time.Duration) 
 
 func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string, bool) {
 	name = dns.NormalizeName(name)
-	labels := strings.Split(name, ".")
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	for i := 0; i < len(labels); i++ {
-		zone := strings.Join(labels[i:], ".")
+	zone := name
+	for {
 		if entry, ok := c.items[zone]; ok && time.Now().Before(entry.expires) {
 			return zone, entry.servers, true
 		}
+
+		idx := strings.Index(zone, ".")
+		if idx == -1 || idx == len(zone)-1 {
+			break
+		}
+		zone = zone[idx+1:]
+	}
+
+	if entry, ok := c.items["."]; ok && time.Now().Before(entry.expires) {
+		return ".", entry.servers, true
 	}
 
 	return ".", nil, false

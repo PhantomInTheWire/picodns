@@ -74,31 +74,43 @@ func ExtractNameFromData(fullMsg []byte, dataOffset int) string {
 	return name
 }
 
-// BuildQuery constructs a DNS query message for the given name, type, and class.
-// It uses a maximum-size buffer to avoid calculation errors, as DNS messages
-// over UDP are limited to 512 bytes per RFC 1035.
-// Returns the serialized query as a byte slice.
-func BuildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
-	buf := make([]byte, MaxMessageSize)
-
+// BuildQueryInto writes a DNS query into the provided buffer.
+// Returns the number of bytes written, or an error.
+func BuildQueryInto(buf []byte, id uint16, name string, qtype, qclass uint16) (int, error) {
 	header := Header{
 		ID:      id,
 		Flags:   FlagRD,
 		QDCount: 1,
 	}
 	if err := WriteHeader(buf, header); err != nil {
-		return nil, err
+		return 0, err
 	}
 
 	off := HeaderLen
 	off, err := EncodeName(buf, off, name)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
+	if len(buf) < off+4 {
+		return 0, ErrShortBuffer
+	}
 	binary.BigEndian.PutUint16(buf[off:off+2], qtype)
 	binary.BigEndian.PutUint16(buf[off+2:off+4], qclass)
 	off += 4
 
-	return buf[:off], nil
+	return off, nil
+}
+
+// BuildQuery constructs a DNS query message for the given name, type, and class.
+// It uses a maximum-size buffer to avoid calculation errors, as DNS messages
+// over UDP are limited to 512 bytes per RFC 1035.
+// Returns the serialized query as a byte slice.
+func BuildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
+	buf := make([]byte, MaxMessageSize)
+	n, err := BuildQueryInto(buf, id, name, qtype, qclass)
+	if err != nil {
+		return nil, err
+	}
+	return buf[:n], nil
 }

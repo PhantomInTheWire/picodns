@@ -3,7 +3,16 @@ package dns
 import (
 	"errors"
 	"strings"
+	"sync"
 )
+
+var builderPool = sync.Pool{
+	New: func() any {
+		b := &strings.Builder{}
+		b.Grow(64)
+		return b
+	},
+}
 
 const (
 	maxNameLen  = 255
@@ -14,9 +23,12 @@ const (
 var ErrBadPointer = errors.New("dns: bad compression pointer")
 
 func DecodeName(buf []byte, off int) (string, int, error) {
-	var builder strings.Builder
-	builder.Grow(64)
-	next, err := decodeNameInto(buf, off, 0, nil, &builder)
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
+	next, err := decodeNameInto(buf, off, 0, nil, builder)
 	if err != nil {
 		return "", 0, err
 	}

@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -175,8 +174,14 @@ func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), er
 	q := reqMsg.Questions[0]
 	name := q.Name
 	reqHeader := reqMsg.Header
-	questions := make([]dns.Question, len(reqMsg.Questions))
-	copy(questions, reqMsg.Questions)
+	// For single-question queries (the vast majority), use slice directly
+	var questions []dns.Question
+	if len(reqMsg.Questions) == 1 {
+		questions = reqMsg.Questions
+	} else {
+		questions = make([]dns.Question, len(reqMsg.Questions))
+		copy(questions, reqMsg.Questions)
+	}
 	reqMsg.Release()
 
 	stats := &resolutionStats{}
@@ -204,10 +209,15 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		servers = append([]string(nil), servers...)
 	}
 
-	query, err := dns.BuildQuery(reqHeader.ID, name, q.Type, q.Class)
+	bufPtr := r.bufPool.Get()
+	buf := *bufPtr
+	n, err := dns.BuildQueryInto(buf, reqHeader.ID, name, q.Type, q.Class)
 	if err != nil {
+		r.bufPool.Put(bufPtr)
 		return nil, nil, err
 	}
+	query := buf[:n]
+	defer r.bufPool.Put(bufPtr)
 
 	for range maxRecursionDepth {
 		if err := ctx.Err(); err != nil {
@@ -414,8 +424,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	var cachedIPs []string
 	var uncachedNames []string
 	for _, nsName := range nsNames {
-		cacheKey := nsName + ":" + strconv.Itoa(int(dns.TypeA))
-		if cached, ok := r.nsCache.Get(cacheKey); ok {
+		if cached, ok := r.nsCache.Get(nsName); ok {
 			cachedIPs = append(cachedIPs, cached...)
 		} else {
 			uncachedNames = append(uncachedNames, nsName)
@@ -484,7 +493,7 @@ loop:
 				}
 			}
 			if len(nsIPs) > 0 {
-				r.nsCache.Set(name+":"+strconv.Itoa(int(dns.TypeA)), nsIPs, nsCacheTTL)
+				r.nsCache.Set(name, nsIPs, nsCacheTTL)
 				if resolvedCount.Add(1) == 1 {
 					nsCancel()
 				}
