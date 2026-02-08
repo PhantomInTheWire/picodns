@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-DURATION="${DURATION:-60}"
+DURATION="${DURATION:-10}"
 QPS="${QPS:-100000}"
-PORT="${PORT:-1053}"1. 
+PORT="${PORT:-1053}"
 QUERY_FILE="${QUERY_FILE:-${ROOT_DIR}/queries.txt}"
 KNOT_PORT="${KNOT_PORT:-1054}"
 KNOT_WORKERS="${KNOT_WORKERS:-1}"
@@ -25,6 +25,9 @@ make build
 DNSD_PID=""
 KRESD_PID=""
 KRESD_DIR=""
+PICO_RESULT=""
+KNOT_RESULT=""
+
 cleanup() {
   if [[ -n "${DNSD_PID}" ]]; then
     kill "${DNSD_PID}" >/dev/null 2>&1 || true
@@ -49,7 +52,8 @@ if [[ "${WARMUP_DURATION}" != "0" ]]; then
   echo "-- warmup ${WARMUP_DURATION}s @ ${WARMUP_QPS} QPS"
   dnsperf -s 127.0.0.1 -p "${PORT}" -d "${QUERY_FILE}" -l "${WARMUP_DURATION}" -Q "${WARMUP_QPS}" > /dev/null 2>&1 || true
 fi
-dnsperf -s 127.0.0.1 -p "${PORT}" -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}"
+PICO_RESULT=$(dnsperf -s 127.0.0.1 -p "${PORT}" -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}" 2>&1)
+echo "${PICO_RESULT}"
 
 kill "${DNSD_PID}" >/dev/null 2>&1 || true
 wait "${DNSD_PID}" >/dev/null 2>&1 || true
@@ -76,7 +80,8 @@ EOF
       echo "-- warmup ${WARMUP_DURATION}s @ ${WARMUP_QPS} QPS"
       dnsperf -s 127.0.0.1 -p "${KNOT_PORT}" -d "${QUERY_FILE}" -l "${WARMUP_DURATION}" -Q "${WARMUP_QPS}" > /dev/null 2>&1 || true
     fi
-    dnsperf -s 127.0.0.1 -p "${KNOT_PORT}" -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}"
+    KNOT_RESULT=$(dnsperf -s 127.0.0.1 -p "${KNOT_PORT}" -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}" 2>&1)
+    echo "${KNOT_RESULT}"
     kill "${KRESD_PID}" >/dev/null 2>&1 || true
     wait "${KRESD_PID}" >/dev/null 2>&1 || true
     KRESD_PID=""
@@ -85,4 +90,19 @@ EOF
   fi
 else
   echo "kresd not found; install with: brew install knot-resolver" >&2
+fi
+
+echo ""
+echo "========================================"
+echo "           SUMMARY"
+echo "========================================"
+echo ""
+echo "PicoDNS Results:"
+echo "----------------"
+echo "${PICO_RESULT}" | tail -16
+echo ""
+if [[ -n "${KNOT_RESULT}" ]]; then
+  echo "Knot Results:"
+  echo "-------------"
+  echo "${KNOT_RESULT}" | tail -16
 fi

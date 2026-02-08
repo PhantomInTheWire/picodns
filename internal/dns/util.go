@@ -7,7 +7,8 @@ import (
 
 // NormalizeName returns a normalized domain name (lowercase, no trailing dot).
 func NormalizeName(name string) string {
-	return strings.ToLower(strings.TrimSuffix(name, "."))
+	name = strings.TrimSuffix(name, ".")
+	return asciiLowerIfNeeded(name)
 }
 
 // JoinLabels joins a slice of domain name labels with dots.
@@ -51,14 +52,30 @@ func IsSubdomain(child, parent string) bool {
 	if parent == "." {
 		return true
 	}
-	child = strings.ToLower(strings.TrimSuffix(child, "."))
-	parent = strings.ToLower(strings.TrimSuffix(parent, "."))
+	child = NormalizeName(child)
+	parent = NormalizeName(parent)
 
 	if child == parent {
 		return true
 	}
 
 	return strings.HasSuffix(child, "."+parent)
+}
+
+func asciiLowerIfNeeded(s string) string {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			b := []byte(s)
+			for j := i; j < len(b); j++ {
+				if b[j] >= 'A' && b[j] <= 'Z' {
+					b[j] = b[j] + ('a' - 'A')
+				}
+			}
+			return string(b)
+		}
+	}
+	return s
 }
 
 // ExtractNameFromData extracts a domain name from resource record data,
@@ -71,7 +88,7 @@ func ExtractNameFromData(fullMsg []byte, dataOffset int) string {
 	if err != nil {
 		return ""
 	}
-	return name
+	return NormalizeName(name)
 }
 
 // BuildQueryInto writes a DNS query into the provided buffer.

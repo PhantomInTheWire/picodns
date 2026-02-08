@@ -3,7 +3,6 @@ package resolver
 import (
 	"encoding/binary"
 	"net"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -152,17 +151,14 @@ func TestExtractReferral_CaseInsensitiveCNAME(t *testing.T) {
 
 	ans := msg.Answers[0]
 	require.Equal(t, dns.TypeCNAME, ans.Type)
-	require.Equal(t, "WWW.EXAMPLE.COM", ans.Name)
+	// Names are now normalized to lowercase during parsing
+	require.Equal(t, "www.example.com", ans.Name)
 
 	cnameTarget := dns.ExtractNameFromData(buf, ans.DataOffset)
 	require.Equal(t, "target.example.com", cnameTarget)
 
 	queryName := "www.example.com"
 	cnameOwner := ans.Name
-	matchedCaseSensitive := cnameOwner == queryName || cnameOwner == queryName+"."
-	require.False(t, matchedCaseSensitive)
-
-	matchedCaseInsensitive := strings.EqualFold(cnameOwner, queryName) ||
-		strings.EqualFold(cnameOwner, queryName+".")
-	require.True(t, matchedCaseInsensitive)
+	// After normalization, names match directly (both lowercase)
+	require.Equal(t, queryName, cnameOwner)
 }

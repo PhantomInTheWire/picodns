@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -248,7 +247,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		if len(respMsg.Answers) > 0 {
 			for _, ans := range respMsg.Answers {
 				if ans.Type == dns.TypeCNAME {
-					if !strings.EqualFold(ans.Name, name) && !strings.EqualFold(ans.Name, name+".") {
+					if ans.Name != name {
 						continue
 					}
 					cnameTarget := dns.ExtractNameFromData(resp, ans.DataOffset)
@@ -268,12 +267,20 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				}
 			}
 			respMsg.Release()
-			return resp, cleanup, nil
+			minimized, err := dns.MinimizeResponse(resp, false)
+			if err != nil {
+				return resp, cleanup, nil
+			}
+			return minimized, cleanup, nil
 		}
 
 		if (respMsg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
 			respMsg.Release()
-			return resp, cleanup, nil
+			minimized, err := dns.MinimizeResponse(resp, true)
+			if err != nil {
+				return resp, cleanup, nil
+			}
+			return minimized, cleanup, nil
 		}
 
 		if len(respMsg.Authorities) > 0 {
@@ -281,7 +288,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			minTTL := uint32(3600)
 			for _, auth := range respMsg.Authorities {
 				if auth.Type == dns.TypeNS {
-					authZone := dns.NormalizeName(auth.Name)
+					authZone := auth.Name
 					if authZone != "" {
 						childZone = authZone
 					}

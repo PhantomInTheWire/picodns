@@ -3,7 +3,6 @@ package dns
 import (
 	"encoding/binary"
 	"errors"
-	"strings"
 	"sync"
 )
 
@@ -105,7 +104,7 @@ type Question struct {
 }
 
 func (q Question) Normalize() Question {
-	q.Name = strings.ToLower(strings.TrimSuffix(q.Name, "."))
+	q.Name = NormalizeName(q.Name)
 	return q
 }
 
@@ -222,6 +221,7 @@ func ReadResourceRecord(buf []byte, off int) (ResourceRecord, int, error) {
 	if err != nil {
 		return ResourceRecord{}, 0, err
 	}
+	name = NormalizeName(name)
 	if len(buf) < next+10 {
 		return ResourceRecord{}, 0, ErrShortBuffer
 	}
@@ -248,6 +248,7 @@ func ReadQuestion(buf []byte, off int) (Question, int, error) {
 	if err != nil {
 		return Question{}, 0, err
 	}
+	name = NormalizeName(name)
 	if len(buf) < next+4 {
 		return Question{}, 0, ErrShortBuffer
 	}

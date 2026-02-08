@@ -1,7 +1,6 @@
 package resolver
 
 import (
-	"container/heap"
 	"context"
 	"encoding/binary"
 	"strings"
@@ -232,8 +231,7 @@ func (t *rttTracker) Get(server string) time.Duration {
 }
 
 // SortBest selects the best n servers from the provided list.
-// It uses a heap-based selection to find the top n in O(m log n) where m is len(servers).
-// Max-Heap of size n to find smallest RTTs
+// Uses linear scan - cache friendly for small n (typical DNS selection of 2-3 servers).
 func (t *rttTracker) SortBest(servers []string, n int) []string {
 	if len(servers) <= 1 {
 		return servers
@@ -248,9 +246,15 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	h := &serverHeap{
-		servers: make([]serverRTT, 0, n),
+	type serverRTT struct {
+		name string
+		rtt  time.Duration
 	}
+
+	// Linear scan: maintain slice of best n servers in unsorted order
+	best := make([]serverRTT, 0, n)
+	var maxIdx int
+	var maxRTT time.Duration
 
 	for _, srv := range servers {
 		rtt, ok := t.rtts[srv]
@@ -258,39 +262,39 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 			rtt = 200 * time.Millisecond
 		}
 
-		if h.Len() < n {
-			heap.Push(h, serverRTT{name: srv, rtt: rtt})
-		} else if rtt < h.servers[0].rtt {
-			h.servers[0] = serverRTT{name: srv, rtt: rtt}
-			heap.Fix(h, 0)
+		if len(best) < n {
+			best = append(best, serverRTT{name: srv, rtt: rtt})
+			if rtt > maxRTT {
+				maxRTT = rtt
+				maxIdx = len(best) - 1
+			}
+		} else if rtt < maxRTT {
+			// Replace the worst with this one
+			best[maxIdx] = serverRTT{name: srv, rtt: rtt}
+			// Find new max
+			maxRTT = best[0].rtt
+			maxIdx = 0
+			for i := 1; i < len(best); i++ {
+				if best[i].rtt > maxRTT {
+					maxRTT = best[i].rtt
+					maxIdx = i
+				}
+			}
 		}
 	}
 
-	result := make([]string, h.Len())
-	for i := h.Len() - 1; i >= 0; i-- {
-		result[i] = heap.Pop(h).(serverRTT).name
+	// Sort the result by RTT (lowest first)
+	for i := 0; i < len(best)-1; i++ {
+		for j := i + 1; j < len(best); j++ {
+			if best[j].rtt < best[i].rtt {
+				best[i], best[j] = best[j], best[i]
+			}
+		}
+	}
+
+	result := make([]string, len(best))
+	for i, s := range best {
+		result[i] = s.name
 	}
 	return result
-}
-
-type serverRTT struct {
-	name string
-	rtt  time.Duration
-}
-
-// serverHeap is a Max-Heap of serverRTT based on rtt
-type serverHeap struct {
-	servers []serverRTT
-}
-
-func (h *serverHeap) Len() int           { return len(h.servers) }
-func (h *serverHeap) Less(i, j int) bool { return h.servers[i].rtt > h.servers[j].rtt }
-func (h *serverHeap) Swap(i, j int)      { h.servers[i], h.servers[j] = h.servers[j], h.servers[i] }
-func (h *serverHeap) Push(x any)         { h.servers = append(h.servers, x.(serverRTT)) }
-func (h *serverHeap) Pop() any {
-	old := h.servers
-	n := len(old)
-	x := old[n-1]
-	h.servers = old[0 : n-1]
-	return x
 }

@@ -82,3 +82,48 @@ func BuildResponse(req []byte, answers []Answer, rcode uint16) ([]byte, error) {
 func responseFlags(reqFlags uint16, rcode uint16) uint16 {
 	return FlagQR | (reqFlags & FlagOpcode) | (reqFlags & FlagRD) | FlagRA | (rcode & 0x000F)
 }
+
+// MinimizeResponse strips authority/additional sections to reduce size.
+// If keepAuthorities is true, authority records are preserved and additionals dropped.
+// The response is modified in place and returned as a sliced buffer.
+func MinimizeResponse(resp []byte, keepAuthorities bool) ([]byte, error) {
+	header, err := ReadHeader(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	off := HeaderLen
+	for i := 0; i < int(header.QDCount); i++ {
+		_, next, err := ReadQuestion(resp, off)
+		if err != nil {
+			return nil, err
+		}
+		off = next
+	}
+	for i := 0; i < int(header.ANCount); i++ {
+		_, next, err := ReadResourceRecord(resp, off)
+		if err != nil {
+			return nil, err
+		}
+		off = next
+	}
+	if keepAuthorities {
+		for i := 0; i < int(header.NSCount); i++ {
+			_, next, err := ReadResourceRecord(resp, off)
+			if err != nil {
+				return nil, err
+			}
+			off = next
+		}
+	} else {
+		header.NSCount = 0
+	}
+	header.ARCount = 0
+	if err := WriteHeader(resp, header); err != nil {
+		return nil, err
+	}
+	if off > len(resp) {
+		return nil, ErrShortBuffer
+	}
+	return resp[:off], nil
+}
