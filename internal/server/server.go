@@ -54,28 +54,35 @@ func (s *Server) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	var readerWg sync.WaitGroup
+	var workersWg sync.WaitGroup
+	var readersWg sync.WaitGroup
+
+	shutdown := func() {
+		cancel()
+		readersWg.Wait()
+		close(s.jobQueue)
+		workersWg.Wait()
+	}
 
 	for i := 0; i < s.cfg.Workers; i++ {
-		wg.Add(1)
-		go s.worker(ctx, &wg)
+		workersWg.Add(1)
+		go func() {
+			defer workersWg.Done()
+			s.worker(ctx)
+		}()
 	}
 
 	for _, addr := range s.cfg.ListenAddrs {
 		conn, err := net.ListenPacket("udp", addr)
 		if err != nil {
-			cancel()
-			readerWg.Wait()
-			close(s.jobQueue)
-			wg.Wait()
+			shutdown()
 			return err
 		}
 		s.logger.Info("dns server listening", "listen", addr)
 
-		readerWg.Add(1)
+		readersWg.Add(1)
 		go func(c net.PacketConn) {
-			defer readerWg.Done()
+			defer readersWg.Done()
 			defer func() { _ = c.Close() }()
 
 			go func() {
@@ -111,9 +118,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	<-ctx.Done()
 	s.logger.Info("shutting down")
-	readerWg.Wait()
-	close(s.jobQueue)
-	wg.Wait()
+	shutdown()
 	s.logger.Info("server shutdown complete",
 		"total_queries", s.TotalQueries.Load(),
 		"dropped_packets", s.DroppedPackets.Load(),
@@ -122,9 +127,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (s *Server) worker(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func (s *Server) worker(ctx context.Context) {
 	for job := range s.jobQueue {
 		resp, cleanup, err := s.resolver.Resolve(ctx, (*job.dataPtr)[:job.n])
 		if err != nil {
