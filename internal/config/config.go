@@ -12,6 +12,8 @@ type Config struct {
 	CacheSize   int
 	LogLevel    string
 	Recursive   bool
+	Prewarm     bool
+	Prefetch    bool
 }
 
 func Default() Config {
@@ -21,6 +23,8 @@ func Default() Config {
 		Workers:     128,
 		CacheSize:   10000,
 		LogLevel:    "info",
+		Prewarm:     true,
+		Prefetch:    true,
 	}
 }
 
@@ -37,6 +41,8 @@ func BindFlags(cfg *Config) {
 	flag.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "max cache entries")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level (debug, info, warn, error)")
 	flag.BoolVar(&cfg.Recursive, "recursive", cfg.Recursive, "use recursive resolution instead of forwarding to upstreams")
+	flag.BoolVar(&cfg.Prewarm, "prewarm", cfg.Prewarm, "pre-warm recursive resolver cache on startup")
+	flag.BoolVar(&cfg.Prefetch, "prefetch", cfg.Prefetch, "proactively refresh hot cache entries")
 
 	flag.Parse()
 

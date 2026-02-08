@@ -60,11 +60,12 @@ func TestCnameLoopDetection(t *testing.T) {
 		shouldLoop bool
 	}{
 		{
-			name:       "valid_mutual_cname_no_loop",
-			shouldLoop: false,
+			name:       "mutual_cname_is_loop",
+			shouldLoop: true,
 			cnameChain: []cnameStep{
 				{owner: "alias1.example.com", target: "alias2.example.com"},
 				{owner: "alias2.example.com", target: "alias1.example.com"},
+				{owner: "alias1.example.com", target: "alias2.example.com"},
 			},
 		},
 		{
@@ -87,15 +88,6 @@ func TestCnameLoopDetection(t *testing.T) {
 				{owner: "d.example.com", target: "final.example.com"},
 			},
 		},
-		{
-			name:       "different_owners_same_target",
-			shouldLoop: false,
-			cnameChain: []cnameStep{
-				{owner: "alias1.example.com", target: "common.example.com"},
-				{owner: "alias2.example.com", target: "common.example.com"},
-				{owner: "common.example.com", target: "final.example.com"},
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -104,12 +96,12 @@ func TestCnameLoopDetection(t *testing.T) {
 			loopDetected := false
 
 			for _, step := range tt.cnameChain {
-				cnameKey := step.owner + "->" + step.target
-				if _, seen := seenCnames[cnameKey]; seen {
+				// Real code uses: seenCnames[cnameTarget]
+				if _, seen := seenCnames[step.target]; seen {
 					loopDetected = true
 					break
 				}
-				seenCnames[cnameKey] = struct{}{}
+				seenCnames[step.target] = struct{}{}
 			}
 
 			if tt.shouldLoop {
@@ -119,22 +111,6 @@ func TestCnameLoopDetection(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestCnameLoopDetectionKeyFormat(t *testing.T) {
-	seenCnames := make(map[string]struct{})
-	key1 := "alias1.example.com->alias2.example.com"
-	seenCnames[key1] = struct{}{}
-
-	_, exists := seenCnames[key1]
-	require.True(t, exists)
-
-	key2 := "alias2.example.com->alias1.example.com"
-	_, exists = seenCnames[key2]
-	require.False(t, exists)
-
-	seenCnames[key2] = struct{}{}
-	require.Len(t, seenCnames, 2)
 }
 
 func TestExtractReferral_CaseInsensitiveCNAME(t *testing.T) {

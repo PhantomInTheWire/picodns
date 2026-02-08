@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"encoding/binary"
+	"sync"
 	"time"
 
 	"picodns/internal/cache"
@@ -13,9 +14,12 @@ import (
 
 // Cached wraps a resolver with DNS response caching
 type Cached struct {
-	cache    *cache.Cache
-	upstream types.Resolver
-	bufPool  *pool.Bytes
+	cache      *cache.Cache
+	upstream   types.Resolver
+	bufPool    *pool.Bytes
+	prefetch   bool
+	refreshing sync.Map
+	clock      func() time.Time
 }
 
 func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
@@ -23,7 +27,16 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 		cache:    cacheStore,
 		upstream: upstream,
 		bufPool:  pool.DefaultPool,
+		clock:    time.Now,
 	}
+}
+
+func (c *Cached) SetClock(clock func() time.Time) {
+	c.clock = clock
+}
+
+func (c *Cached) EnablePrefetch(enabled bool) {
+	c.prefetch = enabled
 }
 
 func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
@@ -36,7 +49,13 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	questions := make([]dns.Question, len(reqMsg.Questions))
 	copy(questions, reqMsg.Questions)
 
-	if cached, cleanup, ok := c.getCached(q, reqHeader.ID); ok {
+	if cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID); ok {
+		if c.prefetch && hits > prefetchThreshold {
+			remaining := expires.Sub(c.clock())
+			if remaining < origTTL/prefetchRemainingRatio {
+				c.maybePrefetch(q, req)
+			}
+		}
 		reqMsg.Release()
 		return cached, cleanup, nil
 	}
@@ -54,28 +73,58 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		respMsg.Release()
 	}
 
-	// Set RA (Recursion Available) flag on the response
 	setRAFlag(resp)
 
 	return resp, cleanup, nil
 }
 
-// getCached retrieves a cached response and rebuilds it with the correct transaction ID
-func (c *Cached) getCached(q dns.Question, queryID uint16) ([]byte, func(), bool) {
-	if c.cache == nil {
-		return nil, nil, false
+func (c *Cached) maybePrefetch(q dns.Question, req []byte) {
+	if _, loading := c.refreshing.LoadOrStore(q, true); loading {
+		return
 	}
 
-	cachedData, ok := c.cache.Get(q)
+	// Copy req before goroutine to avoid data race with buffer pool reuse
+	reqCopy := make([]byte, len(req))
+	copy(reqCopy, req)
+
+	go func() {
+		defer c.refreshing.Delete(q)
+		ctx, cancel := context.WithTimeout(context.Background(), prefetchTimeout)
+		defer cancel()
+
+		resp, cleanup, err := c.upstream.Resolve(ctx, reqCopy)
+		if err == nil {
+			if cleanup != nil {
+				defer cleanup()
+			}
+			if respMsg, err := dns.ReadMessagePooled(resp); err == nil {
+				if ttl, ok := extractTTL(*respMsg, q); ok {
+					c.setCache(q, resp, ttl)
+				}
+				respMsg.Release()
+			}
+		}
+	}()
+}
+
+// getCachedWithMetadata retrieves a cached response and metadata
+func (c *Cached) getCachedWithMetadata(q dns.Question, queryID uint16) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
+	if c.cache == nil {
+		return nil, nil, time.Time{}, 0, 0, false
+	}
+
+	cachedData, expires, hits, origTTL, ok := c.cache.GetWithMetadata(q)
 	if !ok || len(cachedData) < 4 {
-		return nil, nil, false
+		return nil, nil, time.Time{}, 0, 0, false
 	}
 
 	bufPtr := c.bufPool.Get()
+	fromPool := true
 	if cap(*bufPtr) < len(cachedData) {
 		c.bufPool.Put(bufPtr)
 		newBuf := make([]byte, len(cachedData))
 		bufPtr = &newBuf
+		fromPool = false
 	}
 	resp := (*bufPtr)[:len(cachedData)]
 	copy(resp, cachedData)
@@ -84,10 +133,12 @@ func (c *Cached) getCached(q dns.Question, queryID uint16) ([]byte, func(), bool
 	setRAFlag(resp)
 
 	cleanup := func() {
-		c.bufPool.Put(bufPtr)
+		if fromPool {
+			c.bufPool.Put(bufPtr)
+		}
 	}
 
-	return resp, cleanup, true
+	return resp, cleanup, expires, hits, origTTL, true
 }
 
 // setCache stores a raw DNS response in the cache
@@ -131,7 +182,6 @@ func extractTTL(msg dns.Message, q dns.Question) (time.Duration, bool) {
 }
 
 // setRAFlag sets the Recursion Available (RA) flag in a DNS response header.
-// The response must be at least 4 bytes long.
 func setRAFlag(resp []byte) {
 	if len(resp) >= 4 {
 		flags := binary.BigEndian.Uint16(resp[2:4])

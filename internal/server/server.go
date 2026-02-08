@@ -109,8 +109,10 @@ func (s *Server) Start(ctx context.Context) error {
 				case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, conn: c}:
 				default:
 					s.bufPool.Put(bufPtr)
-					s.DroppedPackets.Add(1)
-					s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", s.DroppedPackets.Load())
+					dropped := s.DroppedPackets.Add(1)
+					if dropped == 1 || dropped%100 == 0 {
+						s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", dropped)
+					}
 				}
 			}
 		}(conn)

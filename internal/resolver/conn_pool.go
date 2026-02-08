@@ -27,6 +27,7 @@ func newConnPool() *connPool {
 }
 
 // get returns a connection from the pool or creates a new one.
+// Stale connections (idle longer than ConnPoolIdleTimeout) are closed and removed.
 // If the pool is exhausted, it creates an ephemeral connection as a fallback.
 func (p *connPool) get() (*net.UDPConn, func(), error) {
 	p.mu.Lock()
@@ -34,12 +35,30 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 
 	now := time.Now()
 
-	for _, uc := range p.conns {
-		if !uc.inUse && now.Sub(uc.lastUsed) < ConnPoolIdleTimeout {
-			uc.inUse = true
-			uc.lastUsed = now
-			return uc.conn, func() { p.release(uc) }, nil
+	activeIdx := -1
+	for i := 0; i < len(p.conns); {
+		uc := p.conns[i]
+		if !uc.inUse {
+			if now.Sub(uc.lastUsed) < ConnPoolIdleTimeout {
+				if activeIdx == -1 {
+					activeIdx = i
+				}
+				i++
+			} else {
+				_ = uc.conn.Close()
+				p.conns = append(p.conns[:i], p.conns[i+1:]...)
+				continue
+			}
+		} else {
+			i++
 		}
+	}
+
+	if activeIdx != -1 {
+		uc := p.conns[activeIdx]
+		uc.inUse = true
+		uc.lastUsed = now
+		return uc.conn, func() { p.release(uc) }, nil
 	}
 
 	if len(p.conns) < ConnPoolMaxConns {

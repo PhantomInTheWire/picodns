@@ -33,7 +33,15 @@ func main() {
 	var res types.Resolver
 	if cfg.Recursive || len(cfg.Upstreams) == 0 {
 		logger.Info("using recursive resolver")
-		res = resolver.NewCached(cacheStore, resolver.NewRecursive())
+		rec := resolver.NewRecursive()
+		cached := resolver.NewCached(cacheStore, rec)
+		cached.EnablePrefetch(cfg.Prefetch)
+		res = cached
+
+		if cfg.Prewarm {
+			logger.Info("starting recursive resolver pre-warm")
+			go rec.Warmup(ctx)
+		}
 	} else {
 		logger.Info("using upstream resolver", "upstreams", cfg.Upstreams)
 		upstream, err := resolver.NewUpstream(cfg.Upstreams)
@@ -41,7 +49,9 @@ func main() {
 			logger.Error("failed to create upstream resolver", "error", err)
 			os.Exit(1)
 		}
-		res = resolver.NewCached(cacheStore, upstream)
+		cached := resolver.NewCached(cacheStore, upstream)
+		cached.EnablePrefetch(cfg.Prefetch)
+		res = cached
 	}
 
 	srv := server.New(cfg, logger, res)

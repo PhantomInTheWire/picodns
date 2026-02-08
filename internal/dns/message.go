@@ -294,6 +294,7 @@ func ValidateResponse(req []byte, resp []byte) error {
 }
 
 // ValidateResponseWithRequest validates a DNS response against a pre-parsed request.
+// It checks the transaction ID, QR flag, and that the question section matches.
 func ValidateResponseWithRequest(reqHeader Header, reqQuestions []Question, resp []byte) error {
 	respHeader, err := ReadHeader(resp)
 	if err != nil {
@@ -306,6 +307,29 @@ func ValidateResponseWithRequest(reqHeader Header, reqQuestions []Question, resp
 
 	if respHeader.Flags&0x8000 == 0 {
 		return ErrNotResponse
+	}
+
+	if len(reqQuestions) != int(respHeader.QDCount) {
+		return ErrQDMismatch
+	}
+
+	off := HeaderLen
+	for _, reqQ := range reqQuestions {
+		respQ, nextOff, err := ReadQuestion(resp, off)
+		if err != nil {
+			return ErrQDMismatch
+		}
+
+		reqNorm := reqQ.Normalize()
+		respNorm := respQ.Normalize()
+
+		if reqNorm.Name != respNorm.Name ||
+			reqQ.Type != respQ.Type ||
+			reqQ.Class != respQ.Class {
+			return ErrQDMismatch
+		}
+
+		off = nextOff
 	}
 
 	return nil

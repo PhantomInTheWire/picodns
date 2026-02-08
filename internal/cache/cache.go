@@ -22,6 +22,8 @@ type entry struct {
 	key     dns.Question
 	value   []byte
 	expires time.Time
+	hits    uint64
+	origTTL time.Duration
 }
 
 func New(max int, clock Clock) *Cache {
@@ -40,8 +42,13 @@ func New(max int, clock Clock) *Cache {
 }
 
 func (c *Cache) Get(key dns.Question) ([]byte, bool) {
+	val, _, _, _, ok := c.GetWithMetadata(key)
+	return val, ok
+}
+
+func (c *Cache) GetWithMetadata(key dns.Question) (value []byte, expires time.Time, hits uint64, origTTL time.Duration, ok bool) {
 	if c.items == nil {
-		return nil, false
+		return nil, time.Time{}, 0, 0, false
 	}
 	key = key.Normalize()
 
@@ -50,15 +57,16 @@ func (c *Cache) Get(key dns.Question) ([]byte, bool) {
 
 	elem, ok := c.items[key]
 	if !ok {
-		return nil, false
+		return nil, time.Time{}, 0, 0, false
 	}
 	item := elem.Value.(*entry)
 	if !item.expires.IsZero() && c.clock().After(item.expires) {
 		c.removeElement(elem)
-		return nil, false
+		return nil, time.Time{}, 0, 0, false
 	}
+	item.hits++
 	c.lru.MoveToFront(elem)
-	return item.value, true
+	return item.value, item.expires, item.hits, item.origTTL, true
 }
 
 func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
@@ -75,11 +83,18 @@ func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
 		item := elem.Value.(*entry)
 		item.value = append([]byte(nil), value...)
 		item.expires = expires
+		item.origTTL = ttl
 		c.lru.MoveToFront(elem)
 		return true
 	}
 
-	elem := c.lru.PushFront(&entry{key: key, value: append([]byte(nil), value...), expires: expires})
+	elem := c.lru.PushFront(&entry{
+		key:     key,
+		value:   append([]byte(nil), value...),
+		expires: expires,
+		origTTL: ttl,
+		hits:    1,
+	})
 	c.items[key] = elem
 
 	if c.lru.Len() > c.max {
