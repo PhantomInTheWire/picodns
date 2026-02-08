@@ -251,9 +251,11 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					if stagger > maxStaggerDelay {
 						stagger = maxStaggerDelay
 					}
+					timer := time.NewTimer(stagger)
 					select {
-					case <-time.After(stagger):
+					case <-timer.C:
 					case <-queryCtx.Done():
+						timer.Stop()
 						return
 					}
 				}

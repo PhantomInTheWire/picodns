@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"picodns/internal/dns"
@@ -16,25 +17,57 @@ type Transport interface {
 	Query(ctx context.Context, server string, req []byte) (resp []byte, cleanup func(), err error)
 }
 
+// addrCache caches resolved UDP addresses to avoid repeated parsing
+type addrCache struct {
+	mu    sync.RWMutex
+	addrs map[string]*net.UDPAddr
+}
+
+func newAddrCache() *addrCache {
+	return &addrCache{
+		addrs: make(map[string]*net.UDPAddr),
+	}
+}
+
+func (c *addrCache) Get(server string) (*net.UDPAddr, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	addr, ok := c.addrs[server]
+	return addr, ok
+}
+
+func (c *addrCache) Set(server string, addr *net.UDPAddr) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.addrs[server] = addr
+}
+
 // udpTransport implements Transport using UDP with TCP fallback.
 type udpTransport struct {
-	bufPool  *pool.Bytes
-	connPool *connPool
-	timeout  time.Duration
+	bufPool   *pool.Bytes
+	connPool  *connPool
+	timeout   time.Duration
+	addrCache *addrCache
 }
 
 func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration) Transport {
 	return &udpTransport{
-		bufPool:  bufPool,
-		connPool: connPool,
-		timeout:  timeout,
+		bufPool:   bufPool,
+		connPool:  connPool,
+		timeout:   timeout,
+		addrCache: newAddrCache(),
 	}
 }
 
 func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]byte, func(), error) {
-	raddr, err := net.ResolveUDPAddr("udp", server)
-	if err != nil {
-		return nil, nil, err
+	raddr, ok := t.addrCache.Get(server)
+	if !ok {
+		var err error
+		raddr, err = net.ResolveUDPAddr("udp", server)
+		if err != nil {
+			return nil, nil, err
+		}
+		t.addrCache.Set(server, raddr)
 	}
 
 	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, false)
