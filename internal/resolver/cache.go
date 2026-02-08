@@ -176,7 +176,7 @@ func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string
 
 	zone := name
 	for {
-		if servers, ok := c.TTL.Get(zone); ok {
+		if servers, ok := c.Get(zone); ok {
 			return zone, servers, true
 		}
 
@@ -187,7 +187,7 @@ func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string
 		zone = zone[idx+1:]
 	}
 
-	if servers, ok := c.TTL.Get("."); ok {
+	if servers, ok := c.Get("."); ok {
 		return ".", servers, true
 	}
 

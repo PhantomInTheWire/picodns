@@ -23,16 +23,6 @@ make run-recursive # recursive mode
 ./bin/dnsd -listen :1053 -upstreams 1.1.1.1:53,8.8.8.8:53 -queue-size 128 -timeout 10 # regular mode config options
 ```
 
-## Configuration
-- `-listen`: Listen addresses (default `:53`)
-- `-upstreams`: Upstream DNS servers
-- `-recursive`: Use recursive resolver (iterative resolution from root servers)
-- `-workers`: Concurrency limit (default `128`)
-- `-queue-size`: Max burst capacity (default `256`)
-- `-cache-size`: LRU entries (default `10000`)
-- `-timeout`: Query timeout (default `5s`)
-- `-log-level`: Log verbosity (debug, info, warn, error)
-
 ## Recursive Mode
 
 Run as a recursive resolver (queries root servers directly, no upstream forwarding):
@@ -48,18 +38,6 @@ sudo ./bin/dnsd -recursive -listen :53
 ./bin/dnsd -recursive -listen :1053
 ```
 
-### Testing Recursive Mode
-
-Send DNS queries through your recursive server:
-
-```bash
-# Using dig
-dig @127.0.0.1 -p 53 example.com
-dig @127.0.0.1 -p 53 google.com A
-dig @127.0.0.1 -p 53 cloudflare.com AAAA
-dig @127.0.0.1 -p 53 github.com MX
-```
-
 ### Recursive Mode Features
 
 - **True Iterative Resolution (No Forwarding)**  
@@ -71,13 +49,5 @@ dig @127.0.0.1 -p 53 github.com MX
 - **Automatic CNAME Chain Resolution**  
   DNS allows one name to alias to another via CNAME records (e.g., `www.example.com` → `cdn.example.net`). These chains can be multiple hops long. We automatically follow the entire chain until we reach the final A/AAAA record, returning the complete answer in a single query.
 
-- **TCP Fallback for Truncated Responses**  
-  UDP packets can be truncated if responses are too large (common with DNSSEC). When we see the TC (truncated) flag, we seamlessly retry the query over TCP to get the full response, ensuring reliability even for complex DNS setups.
-
 - **Full Record Type Support**  
   Supports all standard DNS record types: A, AAAA, MX, TXT, NS, SOA, CNAME, and more. Whether you're looking up mail servers, text records, or IPv6 addresses, PicoDNS handles them correctly.
-
-## Development
-- `make test`: Run unit tests
-- `make test-race`: Check for races
-- `make test-e2e`: Run E2E tests
