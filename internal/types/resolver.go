@@ -7,3 +7,8 @@ import "context"
 type Resolver interface {
 	Resolve(ctx context.Context, req []byte) ([]byte, func(), error)
 }
+
+// Transport is the interface for DNS query transports.
+type Transport interface {
+	Query(ctx context.Context, server string, req []byte) (resp []byte, cleanup func(), err error)
+}

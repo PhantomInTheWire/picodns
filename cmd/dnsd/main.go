@@ -35,7 +35,7 @@ func main() {
 		logger.Info("using recursive resolver")
 		rec := resolver.NewRecursive()
 		cached := resolver.NewCached(cacheStore, rec)
-		cached.EnablePrefetch(cfg.Prefetch)
+		cached.Prefetch = cfg.Prefetch
 		res = cached
 
 		if cfg.Prewarm {
@@ -50,7 +50,7 @@ func main() {
 			os.Exit(1)
 		}
 		cached := resolver.NewCached(cacheStore, upstream)
-		cached.EnablePrefetch(cfg.Prefetch)
+		cached.Prefetch = cfg.Prefetch
 		res = cached
 	}
 

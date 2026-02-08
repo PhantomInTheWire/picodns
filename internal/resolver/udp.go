@@ -10,14 +10,10 @@ import (
 	"picodns/internal/cache"
 	"picodns/internal/dns"
 	"picodns/internal/pool"
+	"picodns/internal/types"
 )
 
-// Transport is the interface for DNS query transports.
-type Transport interface {
-	Query(ctx context.Context, server string, req []byte) (resp []byte, cleanup func(), err error)
-}
-
-// udpTransport implements Transport using UDP with TCP fallback.
+// udpTransport implements types.Transport using UDP with TCP fallback.
 type udpTransport struct {
 	bufPool   *pool.Bytes
 	connPool  *connPool
@@ -25,7 +21,7 @@ type udpTransport struct {
 	addrCache *cache.PermanentCache[string, *net.UDPAddr]
 }
 
-func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration) Transport {
+func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration) types.Transport {
 	return &udpTransport{
 		bufPool:   bufPool,
 		connPool:  connPool,

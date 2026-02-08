@@ -18,7 +18,7 @@ type Cached struct {
 	cache      *cache.Cache
 	upstream   types.Resolver
 	bufPool    *pool.Bytes
-	prefetch   bool
+	Prefetch   bool
 	refreshing sync.Map
 	clock      func() time.Time
 }
@@ -30,14 +30,6 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 		bufPool:  pool.DefaultPool,
 		clock:    time.Now,
 	}
-}
-
-func (c *Cached) SetClock(clock func() time.Time) {
-	c.clock = clock
-}
-
-func (c *Cached) EnablePrefetch(enabled bool) {
-	c.prefetch = enabled
 }
 
 func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
@@ -56,7 +48,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	}
 
 	if cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID); ok {
-		if c.prefetch && hits > prefetchThreshold {
+		if c.Prefetch && hits > prefetchThreshold {
 			remaining := expires.Sub(c.clock())
 			if remaining < origTTL/prefetchRemainingRatio {
 				c.maybePrefetch(q, req)
@@ -154,46 +146,6 @@ func (c *Cached) setCache(q dns.Question, resp []byte, ttl time.Duration) {
 	}
 
 	c.cache.Set(q, resp, ttl)
-}
-
-func extractTTL(msg dns.Message, q dns.Question) (time.Duration, bool) {
-	if (msg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
-		for _, rr := range msg.Authorities {
-			if rr.Type == dns.TypeSOA && len(rr.Data) >= 22 {
-				_, nextM, err := dns.DecodeName(rr.Data, 0)
-				if err != nil {
-					continue
-				}
-				_, nextR, err := dns.DecodeName(rr.Data, nextM)
-				if err != nil {
-					continue
-				}
-				if len(rr.Data) >= nextR+20 {
-					return time.Duration(binary.BigEndian.Uint32(rr.Data[nextR+16:nextR+20])) * time.Second, true
-				}
-			}
-		}
-		return 0, false
-	}
-
-	q = q.Normalize()
-	for _, rr := range msg.Answers {
-		if rr.Type == q.Type && rr.Class == q.Class && rr.TTL > 0 {
-			if dns.NormalizeName(rr.Name) == q.Name {
-				return time.Duration(rr.TTL) * time.Second, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// setRAFlag sets the Recursion Available (RA) flag in a DNS response header.
-func setRAFlag(resp []byte) {
-	if len(resp) >= 4 {
-		flags := binary.BigEndian.Uint16(resp[2:4])
-		flags |= dns.FlagRA
-		binary.BigEndian.PutUint16(resp[2:4], flags)
-	}
 }
 
 // delegationCache caches zone to nameserver IP mappings with TTL clamping.

@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"picodns/internal/pool"
+	"picodns/internal/types"
 )
 
 var (
@@ -14,7 +15,7 @@ var (
 
 type Upstream struct {
 	upstreams []string
-	transport Transport
+	transport types.Transport
 }
 
 func NewUpstream(upstreamAddrs []string) (*Upstream, error) {

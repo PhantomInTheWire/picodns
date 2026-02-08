@@ -2,8 +2,6 @@ package resolver
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,24 +15,8 @@ import (
 	"picodns/internal/cache"
 	"picodns/internal/dns"
 	"picodns/internal/pool"
+	"picodns/internal/types"
 )
-
-// defaultRootServers contains the default DNS root server addresses.
-var defaultRootServers = []string{
-	"198.41.0.4:53",     // a.root-servers.net
-	"199.9.14.201:53",   // b.root-servers.net
-	"192.33.4.12:53",    // c.root-servers.net
-	"199.7.91.13:53",    // d.root-servers.net
-	"192.203.230.10:53", // e.root-servers.net
-	"192.5.5.241:53",    // f.root-servers.net
-	"192.112.36.4:53",   // g.root-servers.net
-	"198.97.190.53:53",  // h.root-servers.net
-	"192.36.148.17:53",  // i.root-servers.net
-	"192.58.128.30:53",  // j.root-servers.net
-	"193.0.14.129:53",   // k.root-servers.net
-	"199.7.83.42:53",    // l.root-servers.net
-	"202.12.27.33:53",   // m.root-servers.net
-}
 
 // Option is a functional option for configuring the Recursive resolver.
 type Option func(*Recursive)
@@ -49,62 +31,16 @@ func WithRootServers(servers []string) Option {
 
 // WithTransport sets a custom transport for the recursive resolver.
 // This is primarily used for testing with mock transports.
-func WithTransport(transport Transport) Option {
+func WithTransport(transport types.Transport) Option {
 	return func(r *Recursive) {
 		r.transport = transport
 	}
 }
 
-const (
-	maxRecursionDepth = 32
-	defaultTimeout    = 2 * time.Second
-
-	// ConnPoolIdleTimeout is how long idle connections are kept in the pool
-	ConnPoolIdleTimeout = 30 * time.Second
-
-	// ConnPoolMaxConns is the maximum number of connections in the pool
-	ConnPoolMaxConns = 64
-
-	// Prefetch settings
-	prefetchThreshold      = 2                // Minimum cache hits before considering prefetch
-	prefetchRemainingRatio = 10               // Prefetch when remaining TTL is less than 1/10th of original
-	prefetchTimeout        = 10 * time.Second // Timeout for background prefetch operations
-
-	// Parallel query settings
-	defaultMaxServers = 3                      // Maximum concurrent servers for normal queries
-	glueMaxServers    = 2                      // Maximum concurrent servers for glue queries
-	minStaggerDelay   = 30 * time.Millisecond  // Minimum stagger between concurrent queries
-	maxStaggerDelay   = 400 * time.Millisecond // Maximum stagger between concurrent queries
-	rttMultiplier     = 12                     // RTT multiplier for stagger (12/10 = 1.2x)
-
-	// NS resolution settings
-	maxConcurrentNSNames = 4                     // Maximum NS names to resolve concurrently
-	nsResolutionTimeout  = 3 * time.Second       // Timeout for NS name resolution
-	nsResolutionStagger  = 50 * time.Millisecond // Stagger between NS resolution attempts
-	nsCacheTTL           = 5 * time.Minute       // TTL for cached NS name resolutions
-
-	// Warmup settings
-	warmupQueryTimeout = 2 * time.Second // Timeout for warmup queries
-)
-
-var (
-	ErrMaxDepth      = errors.New("recursive resolver: max recursion depth exceeded")
-	ErrNoNameservers = errors.New("recursive resolver: no nameservers found")
-	ErrNoGlueRecords = errors.New("recursive resolver: no glue records for NS")
-	ErrCnameLoop     = errors.New("recursive resolver: CNAME loop detected")
-	ErrNoRootServers = errors.New("recursive resolver: no root servers available")
-)
-
-func secureRandUint16() uint16 {
-	var b [2]byte
-	_, _ = rand.Read(b[:])
-	return binary.BigEndian.Uint16(b[:])
-}
-
 // Recursive is a recursive DNS resolver that performs iterative resolution
 // starting from root servers and following referrals.
 type Recursive struct {
-	transport       Transport
+	transport       types.Transport
 	bufPool         *pool.Bytes
 	connPool        *connPool
 	rootServers     []string
@@ -140,10 +76,6 @@ type resolutionStats struct {
 	hops         int           // Successful referral hops (root -> TLD -> auth)
 	totalQueries atomic.Uint32 // All query attempts including failures
 	glueLookups  int           // NS name resolution queries (when no glue records)
-}
-
-var commonTLDs = []string{
-	"com", "net", "org", "edu", "gov", "io", "ai", "co", "in", "me", "dev", "app", "sh", "is",
 }
 
 func (r *Recursive) Warmup(ctx context.Context) {
@@ -405,17 +337,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 	return nil, nil, ErrMaxDepth
 }
 
-// cleanupBoth releases a pooled message and executes a cleanup function.
-// It safely handles nil cleanup functions.
-func cleanupBoth(msg *dns.Message, cleanup func()) {
-	if msg != nil {
-		msg.Release()
-	}
-	if cleanup != nil {
-		cleanup()
-	}
-}
-
 // resolveNSNames resolves the IP addresses of nameservers when glue records are missing.
 // This is a recursive call to get A records for NS hostnames.
 func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth int, seenCnames map[string]struct{}, stats *resolutionStats) ([]string, error) {
@@ -449,9 +370,11 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 loop:
 	for i, nsName := range uncachedNames {
 		if i > 0 {
+			timer := time.NewTimer(nsResolutionStagger)
 			select {
-			case <-time.After(nsResolutionStagger):
+			case <-timer.C:
 			case <-nsCtx.Done():
+				timer.Stop()
 				break loop
 			}
 		}
@@ -490,7 +413,7 @@ loop:
 			var nsIPs []string
 			for _, ans := range respMsg.Answers {
 				if ans.Type == dns.TypeA && len(ans.Data) == 4 {
-					nsIPs = append(nsIPs, net.IP(ans.Data).String()+":53")
+					nsIPs = append(nsIPs, formatIPPort(net.IP(ans.Data), 53))
 				}
 			}
 			if len(nsIPs) > 0 {
@@ -530,45 +453,4 @@ loop:
 		return nil, fmt.Errorf("%w (failed: %d)", ErrNoGlueRecords, errorCount.Load())
 	}
 	return allIPs, nil
-}
-
-// extractReferral extracts nameserver names and their associated glue record IPs from a DNS message.
-// It validates that NS records are in-bailiwick to prevent cache poisoning.
-func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []string) {
-	var nsNames []string
-	nsIPs := make(map[string][]string)
-	zoneNorm := dns.NormalizeName(zone)
-	for _, rr := range msg.Authorities {
-		if rr.Type == dns.TypeNS {
-			nsOwner := dns.NormalizeName(rr.Name)
-			if zoneNorm != "" {
-				if !dns.IsSubdomain(nsOwner, zoneNorm) && nsOwner != zoneNorm {
-					continue
-				}
-			}
-			nsName := dns.ExtractNameFromData(fullMsg, rr.DataOffset)
-			if nsName != "" {
-				nsNames = append(nsNames, nsName)
-			}
-		}
-	}
-	for _, rr := range msg.Additionals {
-		if rr.Type == dns.TypeA && len(rr.Data) == 4 {
-			ip := net.IP(rr.Data).String() + ":53"
-			nsIPs[rr.Name] = append(nsIPs[rr.Name], ip)
-		}
-	}
-	var glueIPs []string
-	for _, nsName := range nsNames {
-		if zoneNorm != "" {
-			nsNameNorm := dns.NormalizeName(nsName)
-			if !dns.IsSubdomain(nsNameNorm, zoneNorm) {
-				continue
-			}
-		}
-		if ips, ok := nsIPs[nsName]; ok {
-			glueIPs = append(glueIPs, ips...)
-		}
-	}
-	return nsNames, glueIPs
 }

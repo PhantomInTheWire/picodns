@@ -63,8 +63,8 @@ func TestCachedResolverPrefetch(t *testing.T) {
 	store := cache.New(10, clock)
 	up := &stubResolver{resp: resp}
 	res := NewCached(store, up)
-	res.SetClock(clock)
-	res.EnablePrefetch(true)
+	res.clock = clock
+	res.Prefetch = true
 
 	// 1st call: Miss, store in cache
 	_, _, err := res.Resolve(context.Background(), req)
