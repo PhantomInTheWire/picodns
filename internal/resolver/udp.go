@@ -37,14 +37,14 @@ func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]
 		return nil, nil, err
 	}
 
-	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, true)
+	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, false)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if needsTCP {
 		release()
-		resp, err := tcpQueryWithValidation(ctx, server, req, t.timeout, true)
+		resp, err := tcpQueryWithValidation(ctx, server, req, t.timeout, false)
 		return resp, nil, err
 	}
 

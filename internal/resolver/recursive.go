@@ -391,7 +391,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					stats.totalQueries.Add(1)
 				}
 				startQ := time.Now()
-				resp, cleanup, err := r.queryServer(queryCtx, srv, query, reqHeader, questions)
+				resp, cleanup, err := r.transport.Query(queryCtx, srv, query)
 				if err == nil {
 					r.rttTracker.Update(srv, time.Since(startQ))
 				}
@@ -520,20 +520,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		}
 	}
 	return nil, nil, ErrMaxDepth
-}
-
-func (r *Recursive) queryServer(ctx context.Context, server string, req []byte, reqHeader dns.Header, questions []dns.Question) ([]byte, func(), error) {
-	resp, cleanup, err := r.transport.Query(ctx, server, req)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := dns.ValidateResponseWithRequest(reqHeader, questions, resp); err != nil {
-		if cleanup != nil {
-			cleanup()
-		}
-		return nil, nil, err
-	}
-	return resp, cleanup, nil
 }
 
 // cleanupBoth releases a pooled message and executes a cleanup function.

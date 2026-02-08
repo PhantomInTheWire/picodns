@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 
-	"picodns/internal/dns"
 	"picodns/internal/pool"
 )
 
@@ -44,14 +43,6 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, func(), err
 	for _, upstream := range u.upstreams {
 		resp, cleanup, err := u.transport.Query(ctx, upstream, req)
 		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if err := dns.ValidateResponse(req, resp); err != nil {
-			if cleanup != nil {
-				cleanup()
-			}
 			lastErr = err
 			continue
 		}
