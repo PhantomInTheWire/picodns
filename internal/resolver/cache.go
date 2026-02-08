@@ -196,96 +196,36 @@ func setRAFlag(resp []byte) {
 	}
 }
 
-// nsCacheEntry stores resolved NS name IPs with expiration
-type nsCacheEntry struct {
-	ips     []string
-	expires time.Time
-}
-
-// nsCache caches NS name to IP mappings
-type nsCache struct {
-	mu    sync.RWMutex
-	items map[string]nsCacheEntry
-}
-
-func newNSCache() *nsCache {
-	return &nsCache{
-		items: make(map[string]nsCacheEntry),
-	}
-}
-
-func (c *nsCache) Get(key string) ([]string, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	entry, ok := c.items[key]
-	if !ok || time.Now().After(entry.expires) {
-		return nil, false
-	}
-	return entry.ips, true
-}
-
-func (c *nsCache) Set(key string, ips []string, ttl time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.items[key] = nsCacheEntry{
-		ips:     ips,
-		expires: time.Now().Add(ttl),
-	}
-}
-
-// delegationEntry stores nameservers for a zone
-type delegationEntry struct {
-	servers []string
-	expires time.Time
-}
-
-// delegationCache caches zone to nameserver IP mappings
+// delegationCache caches zone to nameserver IP mappings with TTL clamping.
 type delegationCache struct {
-	mu    sync.RWMutex
-	items map[string]delegationEntry
+	*cache.TTL[string, []string]
 }
 
 func newDelegationCache() *delegationCache {
 	return &delegationCache{
-		items: make(map[string]delegationEntry),
+		TTL: cache.NewTTL[string, []string](nil),
 	}
 }
 
-func (c *delegationCache) Get(zone string) ([]string, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	entry, ok := c.items[zone]
-	if !ok || time.Now().After(entry.expires) {
-		return nil, false
-	}
-	return entry.servers, true
-}
-
+// Set stores servers with TTL clamping (min 5s, max 24h).
 func (c *delegationCache) Set(zone string, servers []string, ttl time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if ttl > 24*time.Hour {
 		ttl = 24 * time.Hour
 	}
 	if ttl < 5*time.Second {
 		ttl = 5 * time.Second
 	}
-	c.items[zone] = delegationEntry{
-		servers: servers,
-		expires: time.Now().Add(ttl),
-	}
+	c.TTL.Set(zone, servers, ttl)
 }
 
+// FindLongestMatchingZone finds the longest matching zone for a name.
 func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string, bool) {
 	name = dns.NormalizeName(name)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	zone := name
 	for {
-		if entry, ok := c.items[zone]; ok && time.Now().Before(entry.expires) {
-			return zone, entry.servers, true
+		if servers, ok := c.TTL.Get(zone); ok {
+			return zone, servers, true
 		}
 
 		idx := strings.Index(zone, ".")
@@ -295,8 +235,8 @@ func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string
 		zone = zone[idx+1:]
 	}
 
-	if entry, ok := c.items["."]; ok && time.Now().Before(entry.expires) {
-		return ".", entry.servers, true
+	if servers, ok := c.TTL.Get("."); ok {
+		return ".", servers, true
 	}
 
 	return ".", nil, false

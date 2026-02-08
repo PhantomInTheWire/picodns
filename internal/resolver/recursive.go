@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"picodns/internal/cache"
 	"picodns/internal/dns"
 	"picodns/internal/pool"
 )
@@ -108,7 +109,7 @@ type Recursive struct {
 	connPool        *connPool
 	rootServers     []string
 	logger          *slog.Logger
-	nsCache         *nsCache
+	nsCache         *cache.TTL[string, []string]
 	delegationCache *delegationCache
 	rttTracker      *rttTracker
 }
@@ -121,7 +122,7 @@ func NewRecursive(opts ...Option) *Recursive {
 		connPool:        newConnPool(),
 		rootServers:     defaultRootServers,
 		logger:          slog.Default(),
-		nsCache:         newNSCache(),
+		nsCache:         cache.NewTTL[string, []string](nil),
 		delegationCache: newDelegationCache(),
 		rttTracker:      newRTTTracker(),
 	}
