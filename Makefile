@@ -1,4 +1,4 @@
-.PHONY: test test-e2e test-e2e-network test-race fmt build clean lint run run-recursive
+.PHONY: test test-e2e test-e2e-network test-race fmt build clean lint run run-recursive bench
 
 test:
 	go test ./...
@@ -30,3 +30,6 @@ run: build
 
 run-recursive: build
 	./bin/dnsd -recursive -listen :1053
+
+bench:
+	./scripts/bench.sh

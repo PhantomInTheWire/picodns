@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+DURATION="${DURATION:-60}"
+QPS="${QPS:-100000}"
+PORT="${PORT:-1053}"1. 
+QUERY_FILE="${QUERY_FILE:-${ROOT_DIR}/queries.txt}"
+KNOT_PORT="${KNOT_PORT:-1054}"
+KNOT_WORKERS="${KNOT_WORKERS:-1}"
+START_DELAY="${START_DELAY:-3}"
+WARMUP_DURATION="${WARMUP_DURATION:-0}"
+WARMUP_QPS="${WARMUP_QPS:-2000}"
+
+if ! command -v dnsperf >/dev/null 2>&1; then
+  echo "dnsperf not found. Install with: brew install dnsperf" >&2
+  exit 1
+fi
+
+cd "${ROOT_DIR}"
+
+make build
+
+DNSD_PID=""
+KRESD_PID=""
+KRESD_DIR=""
+cleanup() {
+  if [[ -n "${DNSD_PID}" ]]; then
+    kill "${DNSD_PID}" >/dev/null 2>&1 || true
+    wait "${DNSD_PID}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${KRESD_PID}" ]]; then
+    kill "${KRESD_PID}" >/dev/null 2>&1 || true
+    wait "${KRESD_PID}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${KRESD_DIR}" ]]; then
+    rm -rf "${KRESD_DIR}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+./bin/dnsd -recursive -listen ":${PORT}" > /tmp/picodns.log 2>&1 &
+DNSD_PID=$!
+sleep "${START_DELAY}"
+
+echo "== PicoDNS recursive (local) =="
+if [[ "${WARMUP_DURATION}" != "0" ]]; then
+  echo "-- warmup ${WARMUP_DURATION}s @ ${WARMUP_QPS} QPS"
+  dnsperf -s 127.0.0.1 -p "${PORT}" -d "${QUERY_FILE}" -l "${WARMUP_DURATION}" -Q "${WARMUP_QPS}" > /dev/null 2>&1 || true
+fi
+dnsperf -s 127.0.0.1 -p "${PORT}" -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}"
+
+kill "${DNSD_PID}" >/dev/null 2>&1 || true
+wait "${DNSD_PID}" >/dev/null 2>&1 || true
+DNSD_PID=""
+
+# echo "== Cloudflare (1.1.1.1) =="
+# dnsperf -s 1.1.1.1 -p 53 -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}"
+
+# echo "== Google (8.8.8.8) =="
+# dnsperf -s 8.8.8.8 -p 53 -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}"
+
+if command -v kresd >/dev/null 2>&1; then
+  echo "== Knot Resolver (local) =="
+  KRESD_DIR="$(mktemp -d)"
+  cat > "${KRESD_DIR}/config" <<EOF
+net.listen('127.0.0.1', ${KNOT_PORT})
+cache.size = 100 * MB
+EOF
+  kresd -n -q -c config "${KRESD_DIR}" > /tmp/kresd.log 2>&1 &
+  KRESD_PID=$!
+  sleep "${START_DELAY}"
+  if kill -0 "${KRESD_PID}" >/dev/null 2>&1; then
+    if [[ "${WARMUP_DURATION}" != "0" ]]; then
+      echo "-- warmup ${WARMUP_DURATION}s @ ${WARMUP_QPS} QPS"
+      dnsperf -s 127.0.0.1 -p "${KNOT_PORT}" -d "${QUERY_FILE}" -l "${WARMUP_DURATION}" -Q "${WARMUP_QPS}" > /dev/null 2>&1 || true
+    fi
+    dnsperf -s 127.0.0.1 -p "${KNOT_PORT}" -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}"
+    kill "${KRESD_PID}" >/dev/null 2>&1 || true
+    wait "${KRESD_PID}" >/dev/null 2>&1 || true
+    KRESD_PID=""
+  else
+    echo "kresd failed to start; see /tmp/kresd.log" >&2
+  fi
+else
+  echo "kresd not found; install with: brew install knot-resolver" >&2
+fi
