@@ -1,6 +1,6 @@
 # PicoDNS
 
-High-performance, lightweight DNS forwarding proxy in Go. Built for speed and security.(Built mostly for educational purposes but works well on a lot of things). 
+High-performance, lightweight DNS Resolver and forwarding proxy in Go. Built for speed and security.(Built mostly for educational purposes but works well on a lot of things). 
 
 ## Quick Start
 ```bash
