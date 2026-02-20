@@ -2,13 +2,16 @@ package server
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
 
 	"picodns/internal/config"
+	"picodns/internal/dns"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
@@ -116,6 +119,36 @@ func (s *Server) Start(ctx context.Context) error {
 				}
 			}
 		}(conn)
+
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			shutdown()
+			return err
+		}
+		s.logger.Info("dns tcp server listening", "listen", addr)
+
+		readersWg.Add(1)
+		go func(l net.Listener) {
+			defer readersWg.Done()
+			defer func() { _ = l.Close() }()
+
+			go func() {
+				<-ctx.Done()
+				_ = l.Close()
+			}()
+
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+						return
+					}
+					s.logger.Error("tcp accept error", "error", err)
+					continue
+				}
+				go s.handleTCPConn(ctx, conn)
+			}
+		}(ln)
 	}
 
 	<-ctx.Done()
@@ -127,6 +160,81 @@ func (s *Server) Start(ctx context.Context) error {
 		"handler_errors", s.HandlerErrors.Load(),
 		"write_errors", s.WriteErrors.Load())
 	return ctx.Err()
+}
+
+func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
+	defer func() { _ = conn.Close() }()
+
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
+
+	var lenBuf [2]byte
+	for {
+		if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+			return
+		}
+		msgLen := int(binary.BigEndian.Uint16(lenBuf[:]))
+		if msgLen <= 0 || msgLen > dns.MaxMessageSize {
+			s.logger.Warn("invalid tcp message size", "size", msgLen)
+			return
+		}
+
+		bufPtr := s.bufPool.Get()
+		buf := (*bufPtr)[:msgLen]
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			s.bufPool.Put(bufPtr)
+			return
+		}
+
+		resp, cleanup, err := s.resolver.Resolve(ctx, buf)
+		s.bufPool.Put(bufPtr)
+		if err != nil {
+			s.HandlerErrors.Add(1)
+			s.logger.Error("handler error", "error", err)
+			if cleanup != nil {
+				cleanup()
+			}
+			return
+		}
+		if len(resp) == 0 {
+			if cleanup != nil {
+				cleanup()
+			}
+			continue
+		}
+		if len(resp) > int(^uint16(0)) {
+			s.HandlerErrors.Add(1)
+			s.logger.Error("response too large", "size", len(resp))
+			if cleanup != nil {
+				cleanup()
+			}
+			return
+		}
+
+		binary.BigEndian.PutUint16(lenBuf[:], uint16(len(resp)))
+		if _, err := conn.Write(lenBuf[:]); err != nil {
+			s.WriteErrors.Add(1)
+			s.logger.Error("write error", "error", err)
+			if cleanup != nil {
+				cleanup()
+			}
+			return
+		}
+		if _, err := conn.Write(resp); err != nil {
+			s.WriteErrors.Add(1)
+			s.logger.Error("write error", "error", err)
+			if cleanup != nil {
+				cleanup()
+			}
+			return
+		}
+
+		if cleanup != nil {
+			cleanup()
+		}
+	}
 }
 
 func (s *Server) worker(ctx context.Context) {

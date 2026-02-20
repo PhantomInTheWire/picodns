@@ -26,6 +26,14 @@ func TestCacheHitMiss(t *testing.T) {
 	require.Equal(t, []byte{1, 2, 3}, value)
 }
 
+func TestCacheNormalizesKey(t *testing.T) {
+	cache := New(10, nil)
+	cache.Set(dns.Question{Name: "Example.COM", Type: 1, Class: 1}, []byte{7}, time.Minute)
+	value, ok := cache.Get(dns.Question{Name: "example.com", Type: 1, Class: 1})
+	require.True(t, ok)
+	require.Equal(t, []byte{7}, value)
+}
+
 func TestCacheExpiry(t *testing.T) {
 	now := time.Now()
 	clock := func() time.Time { return now }

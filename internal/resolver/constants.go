@@ -30,7 +30,7 @@ var commonTLDs = []string{
 // Recursive resolver constants
 const (
 	maxRecursionDepth = 32
-	defaultTimeout    = 2 * time.Second
+	defaultTimeout    = 800 * time.Millisecond
 
 	// ConnPoolIdleTimeout is how long idle connections are kept in the pool
 	ConnPoolIdleTimeout = 30 * time.Second
@@ -44,20 +44,28 @@ const (
 	prefetchTimeout        = 10 * time.Second // Timeout for background prefetch operations
 
 	// Parallel query settings
-	defaultMaxServers = 3                      // Maximum concurrent servers for normal queries
-	glueMaxServers    = 2                      // Maximum concurrent servers for glue queries
-	minStaggerDelay   = 30 * time.Millisecond  // Minimum stagger between concurrent queries
-	maxStaggerDelay   = 400 * time.Millisecond // Maximum stagger between concurrent queries
-	rttMultiplier     = 12                     // RTT multiplier for stagger (12/10 = 1.2x)
+	defaultMaxServers  = 5                      // Maximum concurrent servers for normal queries
+	glueMaxServers     = 3                      // Maximum concurrent servers for glue queries
+	minStaggerDelay    = 15 * time.Millisecond  // Minimum stagger between concurrent queries
+	maxStaggerDelay    = 300 * time.Millisecond // Maximum stagger between concurrent queries
+	rttMultiplier      = 10                     // RTT multiplier for stagger (10/10 = 1.0x)
+	unknownRTT         = 500 * time.Millisecond // RTT used for servers with no prior samples
+	maxTimeoutBackoff  = 5 * time.Second        // Upper bound on timeout backoff
+	baseTimeoutBackoff = 500 * time.Millisecond // Base backoff for timeouts
 
 	// NS resolution settings
-	maxConcurrentNSNames = 4                     // Maximum NS names to resolve concurrently
+	maxConcurrentNSNames = 6                     // Maximum NS names to resolve concurrently
 	nsResolutionTimeout  = 3 * time.Second       // Timeout for NS name resolution
-	nsResolutionStagger  = 50 * time.Millisecond // Stagger between NS resolution attempts
+	nsResolutionStagger  = 15 * time.Millisecond // Stagger between NS resolution attempts
 	nsCacheTTL           = 5 * time.Minute       // TTL for cached NS name resolutions
 
 	// Warmup settings
-	warmupQueryTimeout = 2 * time.Second // Timeout for warmup queries
+	warmupQueryTimeout = 2 * time.Second       // Timeout for warmup queries
+	warmupParallelism  = 4                     // Concurrent warmup workers
+	warmupStagger      = 50 * time.Millisecond // Stagger between warmup queries
+
+	// EDNS0 settings
+	ednsUDPSize = 1232 // Common safe UDP size to avoid fragmentation
 )
 
 // Resolver errors

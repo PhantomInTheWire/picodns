@@ -159,3 +159,32 @@ func TestCacheMetadataTracking(t *testing.T) {
 	require.GreaterOrEqual(t, hits, uint64(6))
 	require.Equal(t, time.Duration(60)*time.Second, origTTL)
 }
+
+func TestCachedResolverRewritesIDFromCache(t *testing.T) {
+	store := cache.New(10, time.Now)
+	up := &stubResolver{resp: makeResponse(makeQuery("example.com"), 60)}
+	res := NewCached(store, up)
+
+	firstReq := makeQuery("example.com")
+	_, _, err := res.Resolve(context.Background(), firstReq)
+	require.NoError(t, err)
+	require.Equal(t, 1, up.CallCount())
+
+	secondReq := makeQuery("example.com")
+	secondReq[0] = 0x12
+	secondReq[1] = 0x34
+	resp, cleanup, err := res.Resolve(context.Background(), secondReq)
+	require.NoError(t, err)
+	if cleanup != nil {
+		cleanup()
+	}
+	require.Equal(t, uint16(0x1234), dnsID(resp))
+	require.Equal(t, 1, up.CallCount())
+}
+
+func dnsID(resp []byte) uint16 {
+	if len(resp) < 2 {
+		return 0
+	}
+	return uint16(resp[0])<<8 | uint16(resp[1])
+}

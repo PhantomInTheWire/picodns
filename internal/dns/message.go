@@ -47,6 +47,7 @@ const (
 	TypeMX    uint16 = 15
 	TypeTXT   uint16 = 16
 	TypeAAAA  uint16 = 28
+	TypeOPT   uint16 = 41
 	ClassIN   uint16 = 1
 
 	MaxMessageSize = 4096

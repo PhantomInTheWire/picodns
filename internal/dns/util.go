@@ -119,6 +119,49 @@ func BuildQueryInto(buf []byte, id uint16, name string, qtype, qclass uint16) (i
 	return off, nil
 }
 
+// BuildQueryIntoWithEDNS writes a DNS query with an EDNS0 OPT record.
+// udpSize sets the advertised maximum UDP payload size.
+func BuildQueryIntoWithEDNS(buf []byte, id uint16, name string, qtype, qclass uint16, udpSize uint16) (int, error) {
+	header := Header{
+		ID:      id,
+		Flags:   FlagRD,
+		QDCount: 1,
+		ARCount: 1,
+	}
+	if err := WriteHeader(buf, header); err != nil {
+		return 0, err
+	}
+
+	off := HeaderLen
+	off, err := EncodeName(buf, off, name)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(buf) < off+4 {
+		return 0, ErrShortBuffer
+	}
+	binary.BigEndian.PutUint16(buf[off:off+2], qtype)
+	binary.BigEndian.PutUint16(buf[off+2:off+4], qclass)
+	off += 4
+
+	if len(buf) < off+11 {
+		return 0, ErrShortBuffer
+	}
+	buf[off] = 0
+	off++
+	binary.BigEndian.PutUint16(buf[off:off+2], TypeOPT)
+	off += 2
+	binary.BigEndian.PutUint16(buf[off:off+2], udpSize)
+	off += 2
+	binary.BigEndian.PutUint32(buf[off:off+4], 0)
+	off += 4
+	binary.BigEndian.PutUint16(buf[off:off+2], 0)
+	off += 2
+
+	return off, nil
+}
+
 // BuildQuery constructs a DNS query message for the given name, type, and class.
 // It uses a maximum-size buffer to avoid calculation errors, as DNS messages
 // over UDP are limited to 512 bytes per RFC 1035.

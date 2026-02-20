@@ -103,6 +103,13 @@ func setRAFlag(resp []byte) {
 	}
 }
 
+// setResponseID updates the transaction ID in a DNS message header.
+func setResponseID(resp []byte, id uint16) {
+	if len(resp) >= 2 {
+		binary.BigEndian.PutUint16(resp[0:2], id)
+	}
+}
+
 // extractReferral extracts nameserver names and their associated glue record IPs from a DNS message.
 // It validates that NS records are in-bailiwick to prevent cache poisoning.
 func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []string) {

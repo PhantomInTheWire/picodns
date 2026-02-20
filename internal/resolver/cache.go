@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"encoding/binary"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,9 @@ type Cached struct {
 	Prefetch   bool
 	refreshing sync.Map
 	clock      func() time.Time
+	logger     *slog.Logger
+	CacheHits  atomic.Uint64
+	CacheMiss  atomic.Uint64
 }
 
 func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
@@ -30,10 +34,16 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 		upstream: upstream,
 		bufPool:  pool.DefaultPool,
 		clock:    time.Now,
+		logger:   slog.Default(),
 	}
 }
 
 func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
+	var start time.Time
+	debugEnabled := c.logger != nil && c.logger.Enabled(ctx, slog.LevelDebug)
+	if debugEnabled {
+		start = time.Now()
+	}
 	reqMsg, err := dns.ReadMessagePooled(req)
 	if err != nil || len(reqMsg.Questions) == 0 {
 		return c.upstream.Resolve(ctx, req)
@@ -49,19 +59,31 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	}
 
 	if cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID); ok {
+		c.CacheHits.Add(1)
 		if c.Prefetch && hits > prefetchThreshold {
 			remaining := expires.Sub(c.clock())
 			if remaining < origTTL/prefetchRemainingRatio {
 				c.maybePrefetch(q, req)
 			}
 		}
+		if debugEnabled {
+			c.logger.Debug("dns cache hit",
+				"name", q.Name,
+				"type", q.Type,
+				"remaining", expires.Sub(c.clock()),
+				"duration", time.Since(start))
+		}
 		reqMsg.Release()
 		return cached, cleanup, nil
 	}
 	reqMsg.Release()
+	c.CacheMiss.Add(1)
 
 	resp, cleanup, err := c.upstream.Resolve(ctx, req)
 	if err != nil || dns.ValidateResponseWithRequest(reqHeader, questions, resp) != nil {
+		if debugEnabled {
+			c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start), "error", err)
+		}
 		return resp, cleanup, err
 	}
 
@@ -73,6 +95,10 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	}
 
 	setRAFlag(resp)
+
+	if debugEnabled {
+		c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start))
+	}
 
 	return resp, cleanup, nil
 }
@@ -197,14 +223,18 @@ func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string
 
 // rttTracker tracks nameserver response times
 type rttTracker struct {
-	mu    sync.RWMutex
-	rtts  map[string]time.Duration
-	dirty atomic.Bool
+	mu       sync.RWMutex
+	rtts     map[string]time.Duration
+	timeouts map[string]uint32
+	cooldown map[string]time.Time
+	dirty    atomic.Bool
 }
 
 func newRTTTracker() *rttTracker {
 	return &rttTracker{
-		rtts: make(map[string]time.Duration),
+		rtts:     make(map[string]time.Duration),
+		timeouts: make(map[string]uint32),
+		cooldown: make(map[string]time.Time),
 	}
 }
 
@@ -216,8 +246,28 @@ func (t *rttTracker) Update(server string, d time.Duration) {
 	} else {
 		t.rtts[server] = (prev*4 + d) / 5
 	}
+	delete(t.timeouts, server)
+	delete(t.cooldown, server)
 	t.mu.Unlock()
 	t.dirty.Store(true)
+}
+
+func (t *rttTracker) Timeout(server string) {
+	t.mu.Lock()
+	count := t.timeouts[server] + 1
+	if count < 1 {
+		count = 1
+	}
+	if count > 6 {
+		count = 6
+	}
+	backoff := baseTimeoutBackoff << (count - 1)
+	if backoff > maxTimeoutBackoff {
+		backoff = maxTimeoutBackoff
+	}
+	t.timeouts[server] = count
+	t.cooldown[server] = time.Now().Add(backoff)
+	t.mu.Unlock()
 }
 
 func (t *rttTracker) Get(server string) time.Duration {
@@ -225,7 +275,7 @@ func (t *rttTracker) Get(server string) time.Duration {
 	defer t.mu.RUnlock()
 	d, ok := t.rtts[server]
 	if !ok {
-		return 200 * time.Millisecond
+		return unknownRTT
 	}
 	return d
 }
@@ -243,8 +293,19 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 		n = len(servers)
 	}
 
+	now := time.Now()
+	var candidates []string
+
 	t.mu.RLock()
-	defer t.mu.RUnlock()
+	for _, srv := range servers {
+		if until, ok := t.cooldown[srv]; ok && until.After(now) {
+			continue
+		}
+		candidates = append(candidates, srv)
+	}
+	if len(candidates) == 0 {
+		candidates = servers
+	}
 
 	type serverRTT struct {
 		name string
@@ -256,10 +317,10 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 	var maxIdx int
 	var maxRTT time.Duration
 
-	for _, srv := range servers {
+	for _, srv := range candidates {
 		rtt, ok := t.rtts[srv]
 		if !ok {
-			rtt = 200 * time.Millisecond
+			rtt = unknownRTT
 		}
 
 		if len(best) < n {
@@ -291,6 +352,8 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 			}
 		}
 	}
+
+	t.mu.RUnlock()
 
 	result := make([]string, len(best))
 	for i, s := range best {

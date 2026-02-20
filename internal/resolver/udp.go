@@ -3,7 +3,9 @@ package resolver
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"time"
 
@@ -43,10 +45,14 @@ func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]
 
 	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, false)
 	if err != nil {
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			slog.Debug("dns udp query timeout", "server", server)
+		}
 		return nil, nil, err
 	}
 
 	if needsTCP {
+		slog.Debug("dns udp truncated, fallback to tcp", "server", server)
 		release()
 		resp, err := tcpQueryWithValidation(ctx, server, req, t.timeout, false)
 		return resp, nil, err
@@ -161,6 +167,9 @@ func tcpQueryWithValidation(ctx context.Context, server string, req []byte, time
 		return nil, err
 	}
 	respLen := int(binary.BigEndian.Uint16(lenBuf[:]))
+	if respLen > dns.MaxMessageSize {
+		return nil, errors.New("tcp response too large")
+	}
 
 	resp := make([]byte, respLen)
 	if _, err := io.ReadFull(conn, resp); err != nil {
