@@ -50,13 +50,9 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	}
 	q := reqMsg.Questions[0]
 	reqHeader := reqMsg.Header
-	var questions []dns.Question
-	if len(reqMsg.Questions) == 1 {
-		questions = reqMsg.Questions
-	} else {
-		questions = make([]dns.Question, len(reqMsg.Questions))
-		copy(questions, reqMsg.Questions)
-	}
+	// Always copy questions to avoid race with pooled message reuse
+	questions := make([]dns.Question, len(reqMsg.Questions))
+	copy(questions, reqMsg.Questions)
 
 	if cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID); ok {
 		c.CacheHits.Add(1)
