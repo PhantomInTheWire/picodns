@@ -96,18 +96,26 @@ func (c *Cached) StatsSnapshot() CachedStatsSnapshot {
 	}
 }
 
+func (c *Cached) keyFromWire(req []byte) (dns.Header, uint64, bool) {
+	hdr, err := dns.ReadHeader(req)
+	if err != nil || hdr.QDCount == 0 {
+		return dns.Header{}, 0, false
+	}
+	key, _, _, _, compressed, err := dns.HashQuestionKeyFromWire(req, dns.HeaderLen)
+	if err != nil || compressed {
+		return dns.Header{}, 0, false
+	}
+	return hdr, key, true
+}
+
 func (c *Cached) ResolveFromCache(ctx context.Context, req []byte) ([]byte, func(), bool) {
 	defer c.tracers.resolveFromCache.Trace()()
 
 	if c.cache == nil {
 		return nil, nil, false
 	}
-	hdr, err := dns.ReadHeader(req)
-	if err != nil || hdr.QDCount == 0 {
-		return nil, nil, false
-	}
-	key, _, _, _, compressed, err := dns.HashQuestionKeyFromWire(req, dns.HeaderLen)
-	if err != nil || compressed {
+	hdr, key, ok := c.keyFromWire(req)
+	if !ok {
 		return nil, nil, false
 	}
 	resp, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, hdr.ID, false)
@@ -131,26 +139,23 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 
 	// Fast path: avoid full parsing when we can.
 	if c.cache != nil {
-		hdr, hErr := dns.ReadHeader(req)
-		if hErr == nil && hdr.QDCount > 0 {
-			key, _, _, _, compressed, kErr := dns.HashQuestionKeyFromWire(req, dns.HeaderLen)
-			if kErr == nil && !compressed {
-				cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, hdr.ID, c.ObsEnabled)
-				if ok {
-					if c.ObsEnabled {
-						c.CacheHits.Add(1)
-					}
-					if c.Prefetch && hits > prefetchThreshold {
-						remaining := expires.Sub(c.clock())
-						if remaining < origTTL/prefetchRemainingRatio {
-							c.maybePrefetchKey(key, req)
-						}
-					}
-					if debugEnabled {
-						c.logger.Debug("dns cache hit", "duration", time.Since(start))
-					}
-					return cached, cleanup, nil
+		hdr, key, ok := c.keyFromWire(req)
+		if ok {
+			cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, hdr.ID, c.ObsEnabled)
+			if ok {
+				if c.ObsEnabled {
+					c.CacheHits.Add(1)
 				}
+				if c.Prefetch && hits > prefetchThreshold {
+					remaining := expires.Sub(c.clock())
+					if remaining < origTTL/prefetchRemainingRatio {
+						c.maybePrefetchKey(key, req)
+					}
+				}
+				if debugEnabled {
+					c.logger.Debug("dns cache hit", "duration", time.Since(start))
+				}
+				return cached, cleanup, nil
 			}
 		}
 	}
@@ -163,7 +168,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	reqHeader := reqMsg.Header
 	key := c.cacheKeyFromQuestion(q)
 
-	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID, c.ObsEnabled)
+	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, reqHeader.ID, c.ObsEnabled)
 	if ok {
 		if c.ObsEnabled {
 			c.CacheHits.Add(1)
@@ -331,14 +336,6 @@ func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
 			}
 		}
 	}()
-}
-
-func (c *Cached) getCachedWithMetadata(q dns.Question, queryID uint16, sample bool) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
-	if c.cache == nil {
-		return nil, nil, time.Time{}, 0, 0, false
-	}
-	key := c.cacheKeyFromQuestion(q)
-	return c.getCachedWithMetadataKey(key, queryID, sample)
 }
 
 func (c *Cached) cacheKeyFromQuestion(q dns.Question) uint64 {
