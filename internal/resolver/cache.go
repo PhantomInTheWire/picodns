@@ -115,7 +115,7 @@ func (c *Cached) ResolveFromCache(ctx context.Context, req []byte) ([]byte, func
 	if !ok {
 		return nil, nil, false
 	}
-	resp, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, hdr.ID, false)
+	resp, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, hdr.ID)
 	if ok {
 		if c.ObsEnabled {
 			c.CacheHits.Add(1)
@@ -138,7 +138,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	if c.cache != nil {
 		hdr, key, ok := c.keyFromWire(req)
 		if ok {
-			cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, hdr.ID, c.ObsEnabled)
+			cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, hdr.ID)
 			if ok {
 				if c.ObsEnabled {
 					c.CacheHits.Add(1)
@@ -165,7 +165,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	reqHeader := reqMsg.Header
 	key := c.cacheKeyFromQuestion(q)
 
-	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, reqHeader.ID, c.ObsEnabled)
+	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, reqHeader.ID)
 	if ok {
 		if c.ObsEnabled {
 			c.CacheHits.Add(1)
@@ -195,7 +195,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 			return nil, nil, ctx.Err()
 		case <-call.done:
 		}
-		if cached, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, reqHeader.ID, c.ObsEnabled); ok {
+		if cached, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, reqHeader.ID); ok {
 			if c.ObsEnabled {
 				c.CacheHits.Add(1)
 			}
@@ -334,7 +334,7 @@ func (c *Cached) cacheKeyFromQuestion(q dns.Question) uint64 {
 	return h
 }
 
-func (c *Cached) getCachedWithMetadataKey(key uint64, queryID uint16, sample bool) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
+func (c *Cached) getCachedWithMetadataKey(key uint64, queryID uint16) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
 	defer c.tracers.getCachedWithKey.Trace()()
 
 	cachedData, expires, hits, origTTL, ttlOffs, ok := c.cache.GetWithMetadataKey(key)
