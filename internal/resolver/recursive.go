@@ -17,25 +17,6 @@ import (
 	"picodns/internal/types"
 )
 
-// Option is a functional option for configuring the Recursive resolver.
-type Option func(*Recursive)
-
-// WithRootServers sets custom root servers for the recursive resolver.
-// If not provided, the resolver uses the default root servers.
-func WithRootServers(servers []string) Option {
-	return func(r *Recursive) {
-		r.rootServers = servers
-	}
-}
-
-// WithTransport sets a custom transport for the recursive resolver.
-// This is primarily used for testing with mock transports.
-func WithTransport(transport types.Transport) Option {
-	return func(r *Recursive) {
-		r.transport = transport
-	}
-}
-
 // Recursive is a recursive DNS resolver that performs iterative resolution
 // starting from root servers and following referrals.
 type Recursive struct {
@@ -141,137 +122,20 @@ type resolutionStats struct {
 	glueLookups  int           // NS name resolution queries (when no glue records)
 }
 
-func (r *Recursive) Warmup(ctx context.Context) {
-	defer r.tracers.warmup.Trace()()
-
-	r.logger.Info("warming up recursive resolver cache for common TLDs")
-	infoEnabled := r.logger != nil && r.logger.Enabled(ctx, slog.LevelInfo)
-	var start time.Time
-	if infoEnabled {
-		start = time.Now()
-	}
-
-	r.warmupRTT(ctx)
-
-	jobs := make(chan string)
-	var wg sync.WaitGroup
-
-	workerCount := warmupParallelism
-	if workerCount > len(commonTLDs) {
-		workerCount = len(commonTLDs)
-	}
-	if workerCount <= 0 {
-		workerCount = 1
-	}
-
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for tld := range jobs {
-				tctx, cancel := context.WithTimeout(ctx, warmupQueryTimeout)
-				id := secureRandUint16()
-				reqHeader := dns.Header{ID: id, QDCount: 1, Flags: dns.FlagRD}
-				questions := []dns.Question{{Name: tld + ".", Type: dns.TypeNS, Class: dns.ClassIN}}
-
-				resp, cleanup, _ := r.resolveIterative(tctx, reqHeader, questions, tld+".", 0, nil, nil, false)
-				if cleanup != nil {
-					cleanup()
-				}
-				_ = resp
-				cancel()
-			}
-		}()
-	}
-
-	for _, tld := range commonTLDs {
-		select {
-		case <-ctx.Done():
-			close(jobs)
-			wg.Wait()
-			if infoEnabled {
-				r.logger.Info("warmup canceled", "duration", time.Since(start))
-			}
-			return
-		case jobs <- tld:
-		}
-		time.Sleep(warmupStagger)
-	}
-	close(jobs)
-	wg.Wait()
-
-	if infoEnabled {
-		r.logger.Info("warmup complete", "duration", time.Since(start))
-	}
-}
-
-func (r *Recursive) warmupRTT(ctx context.Context) {
-	defer r.tracers.warmupRTT.Trace()()
-
-	if r.transport == nil || len(r.rootServers) == 0 {
-		return
-	}
-
-	var wg sync.WaitGroup
-	for _, server := range r.rootServers {
-		wg.Add(1)
-		go func(srv string) {
-			defer wg.Done()
-			tctx, cancel := context.WithTimeout(ctx, warmupQueryTimeout)
-			defer cancel()
-
-			id := secureRandUint16()
-			bufPtr := r.bufPool.Get()
-			buf := *bufPtr
-			n, err := dns.BuildQueryIntoWithEDNS(buf, id, ".", dns.TypeNS, dns.ClassIN, ednsUDPSize)
-			if err != nil {
-				r.bufPool.Put(bufPtr)
-				return
-			}
-			query := buf[:n]
-			startQ := time.Now()
-			resp, cleanup, err := r.transport.Query(tctx, srv, query)
-			r.bufPool.Put(bufPtr)
-			if err != nil {
-				if cleanup != nil {
-					cleanup()
-				}
-				return
-			}
-			if dns.ValidateResponseWithRequest(dns.Header{ID: id, QDCount: 1}, []dns.Question{{Name: ".", Type: dns.TypeNS, Class: dns.ClassIN}}, resp) == nil {
-				r.rttTracker.Update(tctx, srv, time.Since(startQ))
-			}
-			if cleanup != nil {
-				cleanup()
-			}
-		}(server)
-		time.Sleep(warmupStagger)
-	}
-	wg.Wait()
-}
-
 func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	defer r.tracers.resolve.Trace()()
 
-	reqMsg, err := dns.ReadMessagePooled(req)
-	if err != nil || len(reqMsg.Questions) == 0 {
+	hdr, err := dns.ReadHeader(req)
+	if err != nil || hdr.QDCount == 0 {
 		return nil, nil, errors.New("recursive resolver: invalid request")
 	}
-	q := reqMsg.Questions[0]
-	name := q.Name
-	reqHeader := reqMsg.Header
-	// For single-question queries (the vast majority), use slice directly
-	var questions []dns.Question
-	if len(reqMsg.Questions) == 1 {
-		questions = reqMsg.Questions
-	} else {
-		questions = make([]dns.Question, len(reqMsg.Questions))
-		copy(questions, reqMsg.Questions)
+	q, _, qErr := dns.ReadQuestion(req, dns.HeaderLen)
+	if qErr != nil {
+		return nil, nil, errors.New("recursive resolver: invalid request")
 	}
-	reqMsg.Release()
 
 	stats := &resolutionStats{}
-	return r.resolveIterative(ctx, reqHeader, questions, name, 0, nil, stats, false)
+	return r.resolveIterative(ctx, hdr, []dns.Question{q}, q.Name, 0, nil, stats, false)
 }
 
 // resolveIterative performs iterative DNS resolution starting from root servers.
@@ -330,12 +194,12 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 
 		resultChan := make(chan queryResult, len(servers))
 		queryCtx, cancelQueries := context.WithCancel(ctx)
-		var wg sync.WaitGroup
 
 		for i, server := range servers {
-			wg.Add(1)
 			go func(srv string, idx int) {
-				defer wg.Done()
+				res := queryResult{server: srv}
+				defer func() { resultChan <- res }()
+
 				if idx > 0 {
 					stagger := r.rttTracker.Get(queryCtx, servers[idx-1]) * rttMultiplier / 10
 					if stagger < minStaggerDelay {
@@ -344,11 +208,8 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					if stagger > maxStaggerDelay {
 						stagger = maxStaggerDelay
 					}
-					timer := time.NewTimer(stagger)
-					select {
-					case <-timer.C:
-					case <-queryCtx.Done():
-						timer.Stop()
+					if !sleepOrDone(queryCtx, stagger) {
+						res.err = queryCtx.Err()
 						return
 					}
 				}
@@ -362,7 +223,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				n, err := dns.BuildQueryIntoWithEDNS(buf, outID, name, q.Type, q.Class, ednsUDPSize)
 				if err != nil {
 					r.bufPool.Put(bufPtr)
-					resultChan <- queryResult{err: err}
+					res.err = err
 					return
 				}
 				query := buf[:n]
@@ -381,7 +242,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					defer func() { <-r.querySem }()
 				case <-queryCtx.Done():
 					r.bufPool.Put(bufPtr)
-					resultChan <- queryResult{err: queryCtx.Err()}
+					res.err = queryCtx.Err()
 					return
 				}
 
@@ -402,24 +263,22 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 						if cleanup != nil {
 							cleanup()
 						}
-						resultChan <- queryResult{err: vErr}
+						res.err = vErr
 						return
 					}
 					setResponseID(resp, clientID)
 				}
-				resultChan <- queryResult{resp: resp, cleanup: cleanup, err: err, server: srv}
+				res.resp = resp
+				res.cleanup = cleanup
+				res.err = err
 			}(server, i)
 		}
-
-		go func() {
-			wg.Wait()
-			close(resultChan)
-		}()
 
 		var resp []byte
 		var cleanup func()
 		var respServer string
-		for res := range resultChan {
+		for i := 0; i < len(servers); i++ {
+			res := <-resultChan
 			if res.err == nil {
 				if resp == nil {
 					resp = res.resp
@@ -430,15 +289,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					}
 					// We have a winner; cancel outstanding queries for this hop.
 					cancelQueries()
-					// Drain remaining results to ensure cleanups run.
-					go func(ch <-chan queryResult) {
-						for r := range ch {
-							if r.cleanup != nil {
-								r.cleanup()
-							}
-						}
-					}(resultChan)
-					break
+					continue
 				}
 				if res.cleanup != nil {
 					res.cleanup()
@@ -608,8 +459,9 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 		return cachedIPs, nil
 	}
 	type result struct {
-		ips   []string
-		stats *resolutionStats
+		ips          []string
+		glueLookups  int
+		totalQueries uint32
 	}
 	results := make(chan result, len(uncachedNames))
 	nsCtx, nsCancel := context.WithTimeout(ctx, nsResolutionTimeout)
@@ -619,16 +471,9 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	resolvedCount := atomic.Uint32{}
 	errorCount := atomic.Uint32{}
 
-loop:
 	for i, nsName := range uncachedNames {
-		if i > 0 {
-			timer := time.NewTimer(nsResolutionStagger)
-			select {
-			case <-timer.C:
-			case <-nsCtx.Done():
-				timer.Stop()
-				break loop
-			}
+		if i > 0 && !sleepOrDone(nsCtx, nsResolutionStagger) {
+			break
 		}
 		if resolvedCount.Load() >= 1 {
 			break
@@ -677,7 +522,7 @@ loop:
 				errorCount.Add(1)
 			}
 			select {
-			case results <- result{ips: nsIPs, stats: nsStats}:
+			case results <- result{ips: nsIPs, glueLookups: nsStats.hops, totalQueries: nsStats.totalQueries.Load()}:
 			case <-nsCtx.Done():
 			}
 			cleanupBoth(respMsg, cleanup)
@@ -693,9 +538,9 @@ loop:
 	allIPs := cachedIPs
 	for res := range results {
 		allIPs = append(allIPs, res.ips...)
-		if stats != nil && res.stats != nil {
-			stats.glueLookups += res.stats.hops
-			stats.totalQueries.Add(res.stats.totalQueries.Load())
+		if stats != nil {
+			stats.glueLookups += res.glueLookups
+			stats.totalQueries.Add(res.totalQueries)
 		}
 		if len(allIPs) >= 1 {
 			nsCancel()

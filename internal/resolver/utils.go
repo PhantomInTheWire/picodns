@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"net"
@@ -58,6 +59,27 @@ func cleanupBoth(msg *dns.Message, cleanup func()) {
 	}
 	if cleanup != nil {
 		cleanup()
+	}
+}
+
+func sleepOrDone(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+			return true
+		}
+	}
+
+	t := time.NewTimer(d)
+	defer t.Stop()
+
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
