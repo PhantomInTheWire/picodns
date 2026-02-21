@@ -10,7 +10,7 @@ func BenchmarkUDPWriteTo(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:1")
 	resp := make([]byte, 100)
@@ -29,14 +29,14 @@ func BenchmarkUDPReadFrom(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	listenerAddr := listener.LocalAddr().(*net.UDPAddr)
 	sender, err := net.DialUDP("udp", nil, listenerAddr)
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer sender.Close()
+	defer func() { _ = sender.Close() }()
 
 	payload := make([]byte, 100)
 	b.SetBytes(int64(len(payload)))

@@ -106,7 +106,7 @@ func (r *Recursive) SetObsEnabled(enabled bool) {
 		r.nsCache.ObsEnabled = enabled
 	}
 	if r.delegationCache != nil && r.delegationCache.TTL != nil {
-		r.delegationCache.TTL.ObsEnabled = enabled
+		r.delegationCache.ObsEnabled = enabled
 	}
 	if t, ok := r.transport.(*udpTransport); ok {
 		t.SetObsEnabled(enabled)
@@ -124,7 +124,7 @@ func (r *Recursive) DelegationCacheStatsSnapshot() cache.TTLStatsSnapshot {
 	if r.delegationCache == nil || r.delegationCache.TTL == nil {
 		return cache.TTLStatsSnapshot{}
 	}
-	return r.delegationCache.TTL.StatsSnapshot()
+	return r.delegationCache.StatsSnapshot()
 }
 
 func (r *Recursive) TransportAddrCacheStatsSnapshot() cache.TTLStatsSnapshot {
