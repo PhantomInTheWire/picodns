@@ -44,12 +44,14 @@ const (
 	prefetchTimeout        = 10 * time.Second // Timeout for background prefetch operations
 
 	// Parallel query settings
-	defaultMaxServers  = 5                      // Maximum concurrent servers for normal queries
-	glueMaxServers     = 3                      // Maximum concurrent servers for glue queries
+	defaultMaxServers  = 2                      // Maximum concurrent servers for normal queries
+	glueMaxServers     = 2                      // Maximum concurrent servers for glue queries
 	minStaggerDelay    = 15 * time.Millisecond  // Minimum stagger between concurrent queries
 	maxStaggerDelay    = 300 * time.Millisecond // Maximum stagger between concurrent queries
 	rttMultiplier      = 10                     // RTT multiplier for stagger (10/10 = 1.0x)
 	unknownRTT         = 500 * time.Millisecond // RTT used for servers with no prior samples
+	queryTimeoutMul    = 4                      // Per-hop timeout = RTT * mul
+	minQueryTimeout    = 80 * time.Millisecond  // Lower bound for per-hop timeout
 	maxTimeoutBackoff  = 5 * time.Second        // Upper bound on timeout backoff
 	baseTimeoutBackoff = 500 * time.Millisecond // Base backoff for timeouts
 
@@ -58,6 +60,12 @@ const (
 	nsResolutionTimeout  = 3 * time.Second       // Timeout for NS name resolution
 	nsResolutionStagger  = 15 * time.Millisecond // Stagger between NS resolution attempts
 	nsCacheTTL           = 5 * time.Minute       // TTL for cached NS name resolutions
+
+	// Cache bounds (best-effort eviction)
+	maxNSCacheEntries         = 4096
+	maxDelegationCacheEntries = 4096
+	maxAddrCacheEntries       = 4096
+	maxRTTTrackerEntries      = 2048
 
 	// Warmup settings
 	warmupQueryTimeout = 2 * time.Second       // Timeout for warmup queries

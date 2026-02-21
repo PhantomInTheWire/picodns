@@ -47,6 +47,7 @@ type Recursive struct {
 	delegationCache *delegationCache
 	rttTracker      *rttTracker
 	ObsEnabled      bool
+	querySem        chan struct{}
 }
 
 // NewRecursive creates a new recursive DNS resolver with the provided options.
@@ -60,7 +61,9 @@ func NewRecursive(opts ...Option) *Recursive {
 		nsCache:         cache.NewTTL[string, []string](nil),
 		delegationCache: newDelegationCache(),
 		rttTracker:      newRTTTracker(),
+		querySem:        make(chan struct{}, 256),
 	}
+	r.nsCache.MaxLen = maxNSCacheEntries
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -330,7 +333,27 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				}
 				query := buf[:n]
 				startQ := time.Now()
-				resp, cleanup, err := r.transport.Query(queryCtx, srv, query)
+				rtt := r.rttTracker.Get(srv)
+				if rtt <= 0 {
+					rtt = unknownRTT
+				}
+				qTimeout := rtt * queryTimeoutMul
+				if qTimeout < minQueryTimeout {
+					qTimeout = minQueryTimeout
+				}
+				// Cap total outbound concurrency.
+				select {
+				case r.querySem <- struct{}{}:
+					defer func() { <-r.querySem }()
+				case <-queryCtx.Done():
+					r.bufPool.Put(bufPtr)
+					resultChan <- queryResult{err: queryCtx.Err()}
+					return
+				}
+
+				tctx, cancel := context.WithTimeout(queryCtx, qTimeout)
+				resp, cleanup, err := r.transport.Query(tctx, srv, query)
+				cancel()
 				r.bufPool.Put(bufPtr)
 				if err == nil {
 					r.rttTracker.Update(srv, time.Since(startQ))
