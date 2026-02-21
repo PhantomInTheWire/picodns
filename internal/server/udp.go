@@ -127,6 +127,9 @@ func (s *Server) worker(ctx context.Context) {
 	for job := range s.jobQueue {
 		resp, cleanup, err := s.resolver.Resolve(ctx, (*job.dataPtr)[:job.n])
 		if err != nil {
+			if cleanup != nil {
+				cleanup()
+			}
 			s.HandlerErrors.Add(1)
 			handlerErrCount++
 			if handlerErrCount == 1 || handlerErrCount%1000 == 0 {
