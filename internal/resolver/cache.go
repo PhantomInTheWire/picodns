@@ -37,7 +37,6 @@ type Cached struct {
 		getCachedWithKey *obs.FuncTracer
 		acquireInflight  *obs.FuncTracer
 		releaseInflight  *obs.FuncTracer
-		setInflightErr   *obs.FuncTracer
 		setCache         *obs.FuncTracer
 		maybePrefetch    *obs.FuncTracer
 		cacheKeyFromQ    *obs.FuncTracer
@@ -65,7 +64,6 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 	c.tracers.getCachedWithKey = obs.NewFuncTracer("Cached.getCachedWithMetadataKey", c.tracers.resolve)
 	c.tracers.acquireInflight = obs.NewFuncTracer("Cached.acquireInflight", c.tracers.resolve)
 	c.tracers.releaseInflight = obs.NewFuncTracer("Cached.releaseInflight", c.tracers.resolve)
-	c.tracers.setInflightErr = obs.NewFuncTracer("Cached.setInflightErr", c.tracers.resolve)
 	c.tracers.setCache = obs.NewFuncTracer("Cached.setCache", c.tracers.resolve)
 	c.tracers.maybePrefetch = obs.NewFuncTracer("Cached.maybePrefetchKey", c.tracers.resolve)
 	c.tracers.cacheKeyFromQ = obs.NewFuncTracer("cacheKeyFromQuestion", c.tracers.resolve)
@@ -76,7 +74,6 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 	obs.GlobalRegistry.Register(c.tracers.getCachedWithKey)
 	obs.GlobalRegistry.Register(c.tracers.acquireInflight)
 	obs.GlobalRegistry.Register(c.tracers.releaseInflight)
-	obs.GlobalRegistry.Register(c.tracers.setInflightErr)
 	obs.GlobalRegistry.Register(c.tracers.setCache)
 	obs.GlobalRegistry.Register(c.tracers.maybePrefetch)
 	obs.GlobalRegistry.Register(c.tracers.cacheKeyFromQ)
@@ -224,7 +221,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		if debugEnabled {
 			c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start), "error", err)
 		}
-		c.setInflightErr(key, err)
+		call.err = err
 		reqMsg.Release()
 		return resp, cleanupResp, err
 	}
@@ -232,14 +229,14 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	vErr := dns.ValidateResponseWithRequest(reqHeader, reqMsg.Questions, resp)
 	if vErr != nil {
 		if vErr == dns.ErrIDMismatch || vErr == dns.ErrNotResponse {
-			c.setInflightErr(key, vErr)
+			call.err = vErr
 			reqMsg.Release()
 			return resp, cleanupResp, vErr
 		}
 		if debugEnabled {
 			c.logger.Debug("dns response validation mismatch; skip cache", "name", q.Name, "type", q.Type, "error", vErr)
 		}
-		c.setInflightErr(key, nil)
+		call.err = nil
 		reqMsg.Release()
 		return resp, cleanupResp, nil
 	}
@@ -257,7 +254,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	if debugEnabled {
 		c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start))
 	}
-	c.setInflightErr(key, nil)
+	call.err = nil
 	return resp, cleanupResp, nil
 }
 
@@ -272,17 +269,6 @@ func (c *Cached) acquireInflight(key uint64) (*inflightCall, bool) {
 	call := &inflightCall{done: make(chan struct{})}
 	c.inflight[key] = call
 	return call, true
-}
-
-func (c *Cached) setInflightErr(key uint64, err error) {
-	defer c.tracers.setInflightErr.Trace()()
-
-	c.inflightMu.Lock()
-	call := c.inflight[key]
-	if call != nil {
-		call.err = err
-	}
-	c.inflightMu.Unlock()
 }
 
 func (c *Cached) releaseInflight(key uint64) {
