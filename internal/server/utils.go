@@ -75,6 +75,25 @@ func (s *Server) startUDPListeners(ctx context.Context, addr string, udpSockets 
 	return nil
 }
 
+func (s *Server) startListeners(ctx context.Context, readersWg, writersWg *sync.WaitGroup) error {
+	udpSockets := s.cfg.UDPSockets
+	if udpSockets <= 0 {
+		udpSockets = 1
+	}
+	cacheResolver, _ := s.resolver.(types.CacheResolver)
+
+	for _, addr := range s.cfg.ListenAddrs {
+		if err := s.startUDPListeners(ctx, addr, udpSockets, cacheResolver, readersWg, writersWg); err != nil {
+			return err
+		}
+		if err := s.startTCPListener(ctx, addr, readersWg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *Server) startTCPListener(ctx context.Context, addr string, readersWg *sync.WaitGroup) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {

@@ -70,22 +70,9 @@ func (s *Server) Start(ctx context.Context) error {
 
 	s.startWorkers(ctx, &workersWg)
 
-	udpSockets := s.cfg.UDPSockets
-	if udpSockets <= 0 {
-		udpSockets = 1
-	}
-	cacheResolver, _ := s.resolver.(types.CacheResolver)
-
-	for _, addr := range s.cfg.ListenAddrs {
-		if err := s.startUDPListeners(ctx, addr, udpSockets, cacheResolver, &readersWg, &writersWg); err != nil {
-			shutdown()
-			return err
-		}
-
-		if err := s.startTCPListener(ctx, addr, &readersWg); err != nil {
-			shutdown()
-			return err
-		}
+	if err := s.startListeners(ctx, &readersWg, &writersWg); err != nil {
+		shutdown()
+		return err
 	}
 
 	<-ctx.Done()
