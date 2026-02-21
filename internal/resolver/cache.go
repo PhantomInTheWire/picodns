@@ -314,8 +314,8 @@ func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
 
 		var q dns.Question
 		if hdr, err := dns.ReadHeader(reqCopy); err == nil && hdr.QDCount > 0 {
-			if qs, ok := readQuestions(reqCopy, hdr.QDCount); ok && len(qs) > 0 {
-				q = qs[0]
+			if q0, _, qErr := dns.ReadQuestion(reqCopy, dns.HeaderLen); qErr == nil {
+				q = q0
 			}
 		}
 

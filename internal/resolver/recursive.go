@@ -467,8 +467,9 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 		return cachedIPs, nil
 	}
 	type result struct {
-		ips   []string
-		stats *resolutionStats
+		ips          []string
+		glueLookups  int
+		totalQueries uint32
 	}
 	results := make(chan result, len(uncachedNames))
 	nsCtx, nsCancel := context.WithTimeout(ctx, nsResolutionTimeout)
@@ -529,7 +530,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 				errorCount.Add(1)
 			}
 			select {
-			case results <- result{ips: nsIPs, stats: nsStats}:
+			case results <- result{ips: nsIPs, glueLookups: nsStats.hops, totalQueries: nsStats.totalQueries.Load()}:
 			case <-nsCtx.Done():
 			}
 			cleanupBoth(respMsg, cleanup)
@@ -546,8 +547,8 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	for res := range results {
 		allIPs = append(allIPs, res.ips...)
 		if stats != nil {
-			stats.glueLookups += res.stats.hops
-			stats.totalQueries.Add(res.stats.totalQueries.Load())
+			stats.glueLookups += res.glueLookups
+			stats.totalQueries.Add(res.totalQueries)
 		}
 		if len(allIPs) >= 1 {
 			nsCancel()
