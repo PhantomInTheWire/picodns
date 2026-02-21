@@ -94,40 +94,7 @@ func (s *Server) Start(ctx context.Context) error {
 			writersWg.Add(1)
 			go func(writer *udpWriter) {
 				defer writersWg.Done()
-				// Rate-limit write errors.
-				var writeErrCount uint64
-				flushItem := func(item udpWrite) {
-					if len(item.resp) > 0 {
-						if _, writeErr := writer.conn.WriteTo(item.resp, item.addr); writeErr != nil {
-							s.WriteErrors.Add(1)
-							writeErrCount++
-							if writeErrCount == 1 || writeErrCount%1000 == 0 {
-								s.logger.Error("write error", "error", writeErr, "count", writeErrCount)
-							}
-						}
-					}
-					if item.cleanup != nil {
-						item.cleanup()
-					}
-					if item.bufPtr != nil {
-						s.bufPool.Put(item.bufPtr)
-					}
-				}
-
-				for {
-					var item udpWrite
-					var ok bool
-					select {
-					case <-ctx.Done():
-						return
-					case item, ok = <-writer.ch:
-						if !ok {
-							return
-						}
-					}
-
-					flushItem(item)
-				}
+				s.udpWriteLoop(ctx, writer)
 			}(w)
 			if i == 0 {
 				s.logger.Info("dns server listening", "listen", addr, "udp_sockets", udpSockets)
@@ -136,61 +103,7 @@ func (s *Server) Start(ctx context.Context) error {
 			readersWg.Add(1)
 			go func(writer *udpWriter) {
 				defer readersWg.Done()
-				defer func() { _ = writer.conn.Close() }()
-
-				go func() {
-					<-ctx.Done()
-					_ = writer.conn.Close()
-				}()
-
-				// Rate-limit read errors.
-				var readErrCount uint64
-				for {
-					bufPtr := s.bufPool.Get()
-					b := *bufPtr
-					b = b[:cap(b)]
-					n, addr, readErr := writer.conn.ReadFrom(b)
-					if readErr != nil {
-						s.bufPool.Put(bufPtr)
-						if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
-							return
-						}
-						readErrCount++
-						if readErrCount == 1 || readErrCount%1000 == 0 {
-							s.logger.Error("read error", "error", readErr, "count", readErrCount)
-						}
-						continue
-					}
-
-					s.TotalQueries.Add(1)
-					*bufPtr = b[:n]
-					// Cache-hit fast path: serve directly without queueing.
-					// Hard separation: hits never queue behind misses.
-					if cacheResolver != nil {
-						if resp, cleanup, ok := cacheResolver.ResolveFromCache(ctx, b[:n]); ok {
-							// Direct write from reader goroutine - fastest path.
-							// No channel, no queuing, no blocking.
-							if _, err := writer.conn.WriteTo(resp, addr); err != nil {
-								s.WriteErrors.Add(1)
-							}
-							if cleanup != nil {
-								cleanup()
-							}
-							s.bufPool.Put(bufPtr)
-							continue
-						}
-					}
-
-					select {
-					case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, writer: writer}:
-					default:
-						s.bufPool.Put(bufPtr)
-						dropped := s.DroppedPackets.Add(1)
-						if dropped == 1 || dropped%100 == 0 {
-							s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", dropped)
-						}
-					}
-				}
+				s.udpReadLoop(ctx, writer, cacheResolver)
 			}(w)
 		}
 
