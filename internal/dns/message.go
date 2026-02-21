@@ -286,41 +286,20 @@ func IsValidRequest(buf []byte) bool {
 		return false
 	}
 
+	// Must be a query (QR=0), not a response
 	if hdr.Flags&FlagQR != 0 {
 		return false
 	}
 
-	if hdr.QDCount != 1 {
+	// Must have at least one question
+	if hdr.QDCount == 0 {
 		return false
 	}
 
-	if hdr.ANCount != 0 || hdr.NSCount != 0 {
-		return false
-	}
-
-	// Opcode is bits 11-14; 0 means standard query
-	opcode := (hdr.Flags & FlagOpcode) >> 11
-	if opcode != 0 {
-		return false
-	}
-
+	// Basic question parsing check - just verify the name is readable
 	off := HeaderLen
-	if len(buf) <= off {
-		return false
-	}
-
-	// Labels max at 63 bytes; compression pointers start with 0xC0
-	firstByte := buf[off]
-	if firstByte > maxLabelLen && firstByte != CompressionFlag {
-		return false
-	}
-
-	nameEnd, err := SkipName(buf, off)
+	_, err = SkipName(buf, off)
 	if err != nil {
-		return false
-	}
-
-	if nameEnd+4 > len(buf) {
 		return false
 	}
 

@@ -44,7 +44,7 @@ const (
 	prefetchTimeout        = 10 * time.Second // Timeout for background prefetch operations
 
 	// Parallel query settings
-	defaultMaxServers  = 2                      // Maximum concurrent servers for normal queries
+	defaultMaxServers  = 3                      // Maximum concurrent servers for normal queries
 	glueMaxServers     = 2                      // Maximum concurrent servers for glue queries
 	minStaggerDelay    = 15 * time.Millisecond  // Minimum stagger between concurrent queries
 	maxStaggerDelay    = 300 * time.Millisecond // Maximum stagger between concurrent queries
@@ -53,7 +53,7 @@ const (
 	queryTimeoutMul    = 4                      // Per-hop timeout = RTT * mul
 	minQueryTimeout    = 80 * time.Millisecond  // Lower bound for per-hop timeout
 	maxTimeoutBackoff  = 5 * time.Second        // Upper bound on timeout backoff
-	baseTimeoutBackoff = 500 * time.Millisecond // Base backoff for timeouts
+	baseTimeoutBackoff = 1 * time.Second        // Base backoff for timeouts
 
 	// NS resolution settings
 	maxConcurrentNSNames = 6                     // Maximum NS names to resolve concurrently
