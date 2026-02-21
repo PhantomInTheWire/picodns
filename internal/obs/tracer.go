@@ -15,7 +15,7 @@ import (
 )
 
 // sampleMask for 1/256 sampling
-const sampleMask = 0xFF
+const sampleMask = 0x1F
 
 // FuncTracer tracks performance metrics for a single function.
 type FuncTracer struct {
