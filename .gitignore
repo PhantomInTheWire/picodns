@@ -29,3 +29,5 @@ Thumbs.db
 
 # Local perf outputs
 perf/
+__pycache__/
+*.pyc

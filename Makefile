@@ -36,4 +36,4 @@ run-recursive: build
 	./bin/dnsd -recursive -listen :1053
 
 bench:
-	./scripts/bench.sh
+	./scripts/bench.py

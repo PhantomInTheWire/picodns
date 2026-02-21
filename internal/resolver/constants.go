@@ -30,7 +30,7 @@ var commonTLDs = []string{
 // Recursive resolver constants
 const (
 	maxRecursionDepth = 32
-	defaultTimeout    = 800 * time.Millisecond
+	defaultTimeout    = 512 * time.Millisecond
 
 	// ConnPoolIdleTimeout is how long idle connections are kept in the pool
 	ConnPoolIdleTimeout = 30 * time.Second
