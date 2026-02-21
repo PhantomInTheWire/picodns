@@ -216,11 +216,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					if stagger > maxStaggerDelay {
 						stagger = maxStaggerDelay
 					}
-					timer := time.NewTimer(stagger)
-					select {
-					case <-timer.C:
-					case <-queryCtx.Done():
-						timer.Stop()
+					if !sleepOrDone(queryCtx, stagger) {
 						return
 					}
 				}
@@ -491,16 +487,9 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	resolvedCount := atomic.Uint32{}
 	errorCount := atomic.Uint32{}
 
-loop:
 	for i, nsName := range uncachedNames {
-		if i > 0 {
-			timer := time.NewTimer(nsResolutionStagger)
-			select {
-			case <-timer.C:
-			case <-nsCtx.Done():
-				timer.Stop()
-				break loop
-			}
+		if i > 0 && !sleepOrDone(nsCtx, nsResolutionStagger) {
+			break
 		}
 		if resolvedCount.Load() >= 1 {
 			break
