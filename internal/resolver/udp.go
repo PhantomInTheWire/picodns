@@ -31,12 +31,14 @@ func (t *udpTransport) SetObsEnabled(enabled bool) {
 }
 
 func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration) types.Transport {
-	return &udpTransport{
+	t := &udpTransport{
 		bufPool:   bufPool,
 		connPool:  connPool,
 		timeout:   timeout,
 		addrCache: cache.NewPermanentCache[string, *net.UDPAddr](),
 	}
+	t.addrCache.MaxLen = maxAddrCacheEntries
+	return t
 }
 
 func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]byte, func(), error) {
@@ -111,6 +113,7 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 
 	bufPtr := bufPool.Get()
 	buf := *bufPtr
+	buf = buf[:cap(buf)]
 
 	n, _, err := conn.ReadFrom(buf)
 	if err != nil {
