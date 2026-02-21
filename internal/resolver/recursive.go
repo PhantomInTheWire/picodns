@@ -46,6 +46,7 @@ type Recursive struct {
 	nsCache         *cache.TTL[string, []string]
 	delegationCache *delegationCache
 	rttTracker      *rttTracker
+	ObsEnabled      bool
 }
 
 // NewRecursive creates a new recursive DNS resolver with the provided options.
@@ -67,6 +68,40 @@ func NewRecursive(opts ...Option) *Recursive {
 		r.transport = NewTransport(r.bufPool, r.connPool, defaultTimeout)
 	}
 	return r
+}
+
+func (r *Recursive) SetObsEnabled(enabled bool) {
+	r.ObsEnabled = enabled
+	if r.nsCache != nil {
+		r.nsCache.ObsEnabled = enabled
+	}
+	if r.delegationCache != nil && r.delegationCache.TTL != nil {
+		r.delegationCache.TTL.ObsEnabled = enabled
+	}
+	if t, ok := r.transport.(*udpTransport); ok {
+		t.SetObsEnabled(enabled)
+	}
+}
+
+func (r *Recursive) NSCacheStatsSnapshot() cache.TTLStatsSnapshot {
+	if r.nsCache == nil {
+		return cache.TTLStatsSnapshot{}
+	}
+	return r.nsCache.StatsSnapshot()
+}
+
+func (r *Recursive) DelegationCacheStatsSnapshot() cache.TTLStatsSnapshot {
+	if r.delegationCache == nil || r.delegationCache.TTL == nil {
+		return cache.TTLStatsSnapshot{}
+	}
+	return r.delegationCache.TTL.StatsSnapshot()
+}
+
+func (r *Recursive) TransportAddrCacheStatsSnapshot() cache.TTLStatsSnapshot {
+	if t, ok := r.transport.(*udpTransport); ok && t.addrCache != nil {
+		return t.addrCache.StatsSnapshot()
+	}
+	return cache.TTLStatsSnapshot{}
 }
 
 // resolutionStats tracks resolution metrics

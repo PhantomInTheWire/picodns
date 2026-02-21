@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 
+	"picodns/internal/cache"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
@@ -16,6 +17,19 @@ var (
 type Upstream struct {
 	upstreams []string
 	transport types.Transport
+}
+
+func (u *Upstream) SetObsEnabled(enabled bool) {
+	if t, ok := u.transport.(*udpTransport); ok {
+		t.SetObsEnabled(enabled)
+	}
+}
+
+func (u *Upstream) TransportAddrCacheStatsSnapshot() cache.TTLStatsSnapshot {
+	if t, ok := u.transport.(*udpTransport); ok && t.addrCache != nil {
+		return t.addrCache.StatsSnapshot()
+	}
+	return cache.TTLStatsSnapshot{}
 }
 
 func NewUpstream(upstreamAddrs []string) (*Upstream, error) {

@@ -2,6 +2,7 @@ package cache
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -11,6 +12,24 @@ type TTL[K comparable, V any] struct {
 	mu    sync.RWMutex
 	items map[K]ttlEntry[V]
 	clock func() time.Time
+
+	ObsEnabled bool
+	gets       atomic.Uint64
+	hits       atomic.Uint64
+	misses     atomic.Uint64
+	expired    atomic.Uint64
+	sets       atomic.Uint64
+	deletes    atomic.Uint64
+}
+
+type TTLStatsSnapshot struct {
+	Gets    uint64
+	Hits    uint64
+	Misses  uint64
+	Expired uint64
+	Sets    uint64
+	Deletes uint64
+	Len     int
 }
 
 type ttlEntry[V any] struct {
@@ -33,11 +52,17 @@ func NewTTL[K comparable, V any](clock func() time.Time) *TTL[K, V] {
 // Get retrieves a value from the cache.
 // Returns the value and true if found and not expired.
 func (c *TTL[K, V]) Get(key K) (V, bool) {
+	if c.ObsEnabled {
+		c.gets.Add(1)
+	}
 	c.mu.RLock()
 	entry, ok := c.items[key]
 	c.mu.RUnlock()
 
 	if !ok {
+		if c.ObsEnabled {
+			c.misses.Add(1)
+		}
 		var zero V
 		return zero, false
 	}
@@ -47,10 +72,19 @@ func (c *TTL[K, V]) Get(key K) (V, bool) {
 		// Double-check after acquiring write lock
 		if entry2, ok2 := c.items[key]; ok2 && !entry2.expires.IsZero() && c.clock().After(entry2.expires) {
 			delete(c.items, key)
+			if c.ObsEnabled {
+				c.expired.Add(1)
+			}
 		}
 		c.mu.Unlock()
+		if c.ObsEnabled {
+			c.misses.Add(1)
+		}
 		var zero V
 		return zero, false
+	}
+	if c.ObsEnabled {
+		c.hits.Add(1)
 	}
 
 	return entry.value, true
@@ -61,6 +95,9 @@ func (c *TTL[K, V]) Get(key K) (V, bool) {
 func (c *TTL[K, V]) Set(key K, value V, ttl time.Duration) {
 	if ttl <= 0 {
 		return
+	}
+	if c.ObsEnabled {
+		c.sets.Add(1)
 	}
 
 	c.mu.Lock()
@@ -74,6 +111,9 @@ func (c *TTL[K, V]) Set(key K, value V, ttl time.Duration) {
 
 // Delete removes a key from the cache.
 func (c *TTL[K, V]) Delete(key K) {
+	if c.ObsEnabled {
+		c.deletes.Add(1)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.items, key)
@@ -84,6 +124,18 @@ func (c *TTL[K, V]) Len() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.items)
+}
+
+func (c *TTL[K, V]) StatsSnapshot() TTLStatsSnapshot {
+	return TTLStatsSnapshot{
+		Gets:    c.gets.Load(),
+		Hits:    c.hits.Load(),
+		Misses:  c.misses.Load(),
+		Expired: c.expired.Load(),
+		Sets:    c.sets.Load(),
+		Deletes: c.deletes.Load(),
+		Len:     c.Len(),
+	}
 }
 
 // Clear removes all items from the cache.
@@ -112,13 +164,22 @@ func NewPermanentCache[K comparable, V any]() *PermanentCache[K, V] {
 
 // Get retrieves a value (ignores expiration since there is none).
 func (c *PermanentCache[K, V]) Get(key K) (V, bool) {
+	if c.ObsEnabled {
+		c.gets.Add(1)
+	}
 	c.mu.RLock()
 	entry, ok := c.items[key]
 	c.mu.RUnlock()
 
 	if !ok {
+		if c.ObsEnabled {
+			c.misses.Add(1)
+		}
 		var zero V
 		return zero, false
+	}
+	if c.ObsEnabled {
+		c.hits.Add(1)
 	}
 
 	return entry.value, true
@@ -126,6 +187,9 @@ func (c *PermanentCache[K, V]) Get(key K) (V, bool) {
 
 // Set stores a value permanently (no expiration).
 func (c *PermanentCache[K, V]) Set(key K, value V) {
+	if c.ObsEnabled {
+		c.sets.Add(1)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

@@ -23,6 +23,13 @@ type udpTransport struct {
 	addrCache *cache.PermanentCache[string, *net.UDPAddr]
 }
 
+func (t *udpTransport) SetObsEnabled(enabled bool) {
+	if t == nil || t.addrCache == nil || t.addrCache.TTL == nil {
+		return
+	}
+	t.addrCache.TTL.ObsEnabled = enabled
+}
+
 func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration) types.Transport {
 	return &udpTransport{
 		bufPool:   bufPool,

@@ -4,13 +4,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 DURATION="${DURATION:-10}"
-QPS="${QPS:-100000}"
+QPS="${QPS:-20000}"
 PORT="${PORT:-1053}"
 QUERY_FILE="${QUERY_FILE:-${ROOT_DIR}/queries.txt}"
 KNOT_PORT="${KNOT_PORT:-1054}"
 KNOT_WORKERS="${KNOT_WORKERS:-1}"
-START_DELAY="${START_DELAY:-3}"
-WARMUP_DURATION="${WARMUP_DURATION:-0}"
+START_DELAY="${START_DELAY:-2}"
+WARMUP_DURATION="${WARMUP_DURATION:-2}"
 WARMUP_QPS="${WARMUP_QPS:-2000}"
 
 if ! command -v dnsperf >/dev/null 2>&1; then
@@ -26,6 +26,10 @@ DNSD_PID=""
 KRESD_PID=""
 KRESD_DIR=""
 PICO_RESULT=""
+PICO_STATS_SERVER=""
+PICO_STATS_CACHE=""
+PICO_STATS_REC_CACHE=""
+PICO_STATS_ADDR_CACHE=""
 KNOT_RESULT=""
 
 cleanup() {
@@ -43,7 +47,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-./bin/dnsd -recursive -listen ":${PORT}" > /tmp/picodns.log 2>&1 &
+./bin/dnsd -recursive -listen ":${PORT}" -stats > /tmp/picodns.log 2>&1 &
 DNSD_PID=$!
 sleep "${START_DELAY}"
 
@@ -58,6 +62,13 @@ echo "${PICO_RESULT}"
 kill "${DNSD_PID}" >/dev/null 2>&1 || true
 wait "${DNSD_PID}" >/dev/null 2>&1 || true
 DNSD_PID=""
+
+if [[ -f /tmp/picodns.log ]]; then
+  PICO_STATS_SERVER=$(grep '"msg":"server shutdown complete"' /tmp/picodns.log | tail -1 || true)
+  PICO_STATS_CACHE=$(grep '"msg":"resolver cache stats"' /tmp/picodns.log | tail -1 || true)
+  PICO_STATS_REC_CACHE=$(grep '"msg":"recursive internal cache stats"' /tmp/picodns.log | tail -1 || true)
+  PICO_STATS_ADDR_CACHE=$(grep '"msg":"transport addr cache stats"' /tmp/picodns.log | tail -1 || true)
+fi
 
 # echo "== Cloudflare (1.1.1.1) =="
 # dnsperf -s 1.1.1.1 -p 53 -d "${QUERY_FILE}" -l "${DURATION}" -Q "${QPS}"
@@ -100,6 +111,24 @@ echo ""
 echo "PicoDNS Results:"
 echo "----------------"
 echo "${PICO_RESULT}" | tail -16
+echo ""
+echo "PicoDNS Stats (shutdown):"
+echo "-------------------------"
+if [[ -n "${PICO_STATS_SERVER}" ]]; then
+  echo "${PICO_STATS_SERVER}"
+fi
+if [[ -n "${PICO_STATS_CACHE}" ]]; then
+  echo "${PICO_STATS_CACHE}"
+fi
+if [[ -n "${PICO_STATS_REC_CACHE}" ]]; then
+  echo "${PICO_STATS_REC_CACHE}"
+fi
+if [[ -n "${PICO_STATS_ADDR_CACHE}" ]]; then
+  echo "${PICO_STATS_ADDR_CACHE}"
+fi
+if [[ -z "${PICO_STATS_SERVER}${PICO_STATS_CACHE}${PICO_STATS_REC_CACHE}${PICO_STATS_ADDR_CACHE}" ]]; then
+  echo "(no stats found; ensure dnsd started with -stats and see /tmp/picodns.log)"
+fi
 echo ""
 if [[ -n "${KNOT_RESULT}" ]]; then
   echo "Knot Results:"
