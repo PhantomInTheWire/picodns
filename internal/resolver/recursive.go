@@ -554,7 +554,7 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	allIPs := cachedIPs
 	for res := range results {
 		allIPs = append(allIPs, res.ips...)
-		if stats != nil && res.stats != nil {
+		if stats != nil {
 			stats.glueLookups += res.stats.hops
 			stats.totalQueries.Add(res.stats.totalQueries.Load())
 		}
