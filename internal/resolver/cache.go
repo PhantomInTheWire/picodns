@@ -93,6 +93,16 @@ func (c *Cached) StatsSnapshot() CachedStatsSnapshot {
 	}
 }
 
+func (c *Cached) maybePrefetch(key uint64, req []byte, expires time.Time, hits uint64, origTTL time.Duration) {
+	if !c.Prefetch || hits <= prefetchThreshold {
+		return
+	}
+	remaining := expires.Sub(c.clock())
+	if remaining < origTTL/prefetchRemainingRatio {
+		c.maybePrefetchKey(key, req)
+	}
+}
+
 func (c *Cached) keyFromWire(req []byte) (dns.Header, uint64, bool) {
 	hdr, err := dns.ReadHeader(req)
 	if err != nil || hdr.QDCount == 0 {
@@ -160,12 +170,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 				if c.ObsEnabled {
 					c.CacheHits.Add(1)
 				}
-				if c.Prefetch && hits > prefetchThreshold {
-					remaining := expires.Sub(c.clock())
-					if remaining < origTTL/prefetchRemainingRatio {
-						c.maybePrefetchKey(key, req)
-					}
-				}
+				c.maybePrefetch(key, req, expires, hits, origTTL)
 				if debugEnabled {
 					c.logger.Debug("dns cache hit", "duration", time.Since(start))
 				}
@@ -190,12 +195,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		if c.ObsEnabled {
 			c.CacheHits.Add(1)
 		}
-		if c.Prefetch && hits > prefetchThreshold {
-			remaining := expires.Sub(c.clock())
-			if remaining < origTTL/prefetchRemainingRatio {
-				c.maybePrefetchKey(key, req)
-			}
-		}
+		c.maybePrefetch(key, req, expires, hits, origTTL)
 		if debugEnabled {
 			c.logger.Debug("dns cache hit",
 				"name", q.Name,
