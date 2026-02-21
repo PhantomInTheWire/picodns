@@ -50,17 +50,20 @@ func (s *Server) startWorkers(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
-func (s *Server) startUDPListeners(ctx context.Context, addr string, udpSockets int, cacheResolver types.CacheResolver, readersWg, writersWg *sync.WaitGroup) error {
+func (s *Server) startUDPListeners(ctx context.Context, addr string, udpSockets int, cacheResolver types.CacheResolver, readersWg, writersWg *sync.WaitGroup, udpWriters *[]*udpWriter) error {
 	for i := 0; i < udpSockets; i++ {
 		conn, err := listenUDPPacket(addr, udpSockets > 1)
 		if err != nil {
 			return err
 		}
 		w := &udpWriter{conn: conn, ch: make(chan udpWrite, s.cfg.Workers)}
+		if udpWriters != nil {
+			*udpWriters = append(*udpWriters, w)
+		}
 		writersWg.Add(1)
 		go func(writer *udpWriter) {
 			defer writersWg.Done()
-			s.udpWriteLoop(ctx, writer)
+			s.udpWriteLoop(writer)
 		}(w)
 		if i == 0 {
 			s.logger.Info("dns server listening", "listen", addr, "udp_sockets", udpSockets)
@@ -75,7 +78,7 @@ func (s *Server) startUDPListeners(ctx context.Context, addr string, udpSockets 
 	return nil
 }
 
-func (s *Server) startListeners(ctx context.Context, readersWg, writersWg *sync.WaitGroup) error {
+func (s *Server) startListeners(ctx context.Context, readersWg, writersWg *sync.WaitGroup, udpWriters *[]*udpWriter) error {
 	udpSockets := s.cfg.UDPSockets
 	if udpSockets <= 0 {
 		udpSockets = 1
@@ -83,7 +86,7 @@ func (s *Server) startListeners(ctx context.Context, readersWg, writersWg *sync.
 	cacheResolver, _ := s.resolver.(types.CacheResolver)
 
 	for _, addr := range s.cfg.ListenAddrs {
-		if err := s.startUDPListeners(ctx, addr, udpSockets, cacheResolver, readersWg, writersWg); err != nil {
+		if err := s.startUDPListeners(ctx, addr, udpSockets, cacheResolver, readersWg, writersWg, udpWriters); err != nil {
 			return err
 		}
 		if err := s.startTCPListener(ctx, addr, readersWg); err != nil {

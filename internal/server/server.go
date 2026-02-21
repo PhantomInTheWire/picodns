@@ -57,6 +57,7 @@ func (s *Server) Start(ctx context.Context) error {
 	var workersWg sync.WaitGroup
 	var readersWg sync.WaitGroup
 	var writersWg sync.WaitGroup
+	udpWriters := make([]*udpWriter, 0, len(s.cfg.ListenAddrs))
 	startTime := time.Now()
 	obsEnabled := s.cfg.Stats
 
@@ -65,12 +66,17 @@ func (s *Server) Start(ctx context.Context) error {
 		readersWg.Wait()
 		close(s.jobQueue)
 		workersWg.Wait()
+		for _, w := range udpWriters {
+			if w != nil {
+				close(w.ch)
+			}
+		}
 		writersWg.Wait()
 	}
 
 	s.startWorkers(ctx, &workersWg)
 
-	if err := s.startListeners(ctx, &readersWg, &writersWg); err != nil {
+	if err := s.startListeners(ctx, &readersWg, &writersWg, &udpWriters); err != nil {
 		shutdown()
 		return err
 	}

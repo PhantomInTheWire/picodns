@@ -28,7 +28,7 @@ type udpWrite struct {
 	bufPtr  *[]byte
 }
 
-func (s *Server) udpWriteLoop(ctx context.Context, writer *udpWriter) {
+func (s *Server) udpWriteLoop(writer *udpWriter) {
 	// Rate-limit write errors.
 	var writeErrCount uint64
 	flushItem := func(item udpWrite) {
@@ -49,17 +49,7 @@ func (s *Server) udpWriteLoop(ctx context.Context, writer *udpWriter) {
 		}
 	}
 
-	for {
-		var item udpWrite
-		var ok bool
-		select {
-		case <-ctx.Done():
-			return
-		case item, ok = <-writer.ch:
-			if !ok {
-				return
-			}
-		}
+	for item := range writer.ch {
 		flushItem(item)
 	}
 }
