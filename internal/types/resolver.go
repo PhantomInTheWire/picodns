@@ -14,7 +14,7 @@ type Resolver interface {
 // Used as a fast-path in the UDP server to avoid queueing cache hits behind
 // slow misses.
 type CacheResolver interface {
-	ResolveFromCache(req []byte) (resp []byte, cleanup func(), ok bool)
+	ResolveFromCache(ctx context.Context, req []byte) (resp []byte, cleanup func(), ok bool)
 }
 
 // Transport is the interface for DNS query transports.

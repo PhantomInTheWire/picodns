@@ -22,6 +22,10 @@ build:
 	mkdir -p bin
 	go build -o bin/dnsd ./cmd/dnsd
 
+build-perf:
+	mkdir -p bin
+	go build -tags=perf -o bin/dnsd ./cmd/dnsd
+
 clean:
 	rm -rf bin
 

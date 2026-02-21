@@ -8,6 +8,7 @@ QPS="${QPS:-20000}"
 PORT="${PORT:-1053}"
 UDP_SOCKETS="${UDP_SOCKETS:-4}"
 QUERY_FILE="${QUERY_FILE:-${ROOT_DIR}/queries.txt}"
+PERF_REPORT_PATH="${PERF_REPORT_PATH:-${ROOT_DIR}/perf/picodns-perf.json}"
 KNOT_PORT="${KNOT_PORT:-1054}"
 KNOT_WORKERS="${KNOT_WORKERS:-1}"
 START_DELAY="${START_DELAY:-2}"
@@ -21,7 +22,8 @@ fi
 
 cd "${ROOT_DIR}"
 
-make build
+# Build with perf tag for function tracing
+make build-perf
 
 DNSD_PID=""
 KRESD_PID=""
@@ -48,7 +50,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-./bin/dnsd -recursive -listen "127.0.0.1:${PORT}" -udp-sockets "${UDP_SOCKETS}" -stats > /tmp/picodns.log 2>&1 &
+rm -f "${PERF_REPORT_PATH}" >/dev/null 2>&1 || true
+./bin/dnsd -recursive -listen "127.0.0.1:${PORT}" -udp-sockets "${UDP_SOCKETS}" -stats -perf-report "${PERF_REPORT_PATH}" > /tmp/picodns.log 2>&1 &
 DNSD_PID=$!
 sleep "${START_DELAY}"
 
@@ -126,6 +129,11 @@ if [[ -n "${PICO_STATS_REC_CACHE}" ]]; then
 fi
 if [[ -n "${PICO_STATS_ADDR_CACHE}" ]]; then
   echo "${PICO_STATS_ADDR_CACHE}"
+fi
+if [[ -f "${PERF_REPORT_PATH}" ]]; then
+  echo ""
+  echo "Function Performance (JSON):"
+  echo "${PERF_REPORT_PATH}"
 fi
 if [[ -z "${PICO_STATS_SERVER}${PICO_STATS_CACHE}${PICO_STATS_REC_CACHE}${PICO_STATS_ADDR_CACHE}" ]]; then
   echo "(no stats found; ensure dnsd started with -stats and see /tmp/picodns.log)"

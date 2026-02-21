@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -21,11 +23,10 @@ import (
 
 // queryJob represents a single DNS query to be processed
 type queryJob struct {
-	dataPtr    *[]byte
-	n          int
-	addr       net.Addr
-	writer     *udpWriter
-	enqueuedNs int64
+	dataPtr *[]byte
+	n       int
+	addr    net.Addr
+	writer  *udpWriter
 }
 
 type udpWriter struct {
@@ -50,11 +51,6 @@ type Server struct {
 	DroppedPackets atomic.Uint64
 	HandlerErrors  atomic.Uint64
 	WriteErrors    atomic.Uint64
-	sample         atomic.Uint64
-
-	queueWait obs.DurationStat
-	resolve   obs.DurationStat
-	write     obs.DurationStat
 
 	cacheCounters func() (hits uint64, miss uint64)
 }
@@ -220,19 +216,11 @@ func (s *Server) Start(ctx context.Context) error {
 					}
 
 					s.TotalQueries.Add(1)
-					var enqNs int64
-					if obsEnabled {
-						// Sample timings (1/256) to minimize overhead during benchmarks.
-						if (s.sample.Add(1) & 0xFF) == 0 {
-							enqNs = time.Now().UnixNano()
-						}
-					}
-
 					*bufPtr = b[:n]
 					// Cache-hit fast path: serve directly without queueing.
 					// Hard separation: hits never queue behind misses.
 					if cacheResolver != nil {
-						if resp, cleanup, ok := cacheResolver.ResolveFromCache(b[:n]); ok {
+						if resp, cleanup, ok := cacheResolver.ResolveFromCache(ctx, b[:n]); ok {
 							// Direct write from reader goroutine - fastest path.
 							// No channel, no queuing, no blocking.
 							if _, err := writer.conn.WriteTo(resp, addr); err != nil {
@@ -247,7 +235,7 @@ func (s *Server) Start(ctx context.Context) error {
 					}
 
 					select {
-					case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, writer: writer, enqueuedNs: enqNs}:
+					case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, writer: writer}:
 					default:
 						s.bufPool.Put(bufPtr)
 						dropped := s.DroppedPackets.Add(1)
@@ -310,20 +298,6 @@ func (s *Server) Start(ctx context.Context) error {
 	if uptime > 0 {
 		avgQPS = float64(total) / uptime.Seconds()
 	}
-	qs := s.queueWait.Snapshot()
-	rs := s.resolve.Snapshot()
-	ws := s.write.Snapshot()
-
-	bottleneck := "resolve"
-	bottleneckAvg := rs.Avg
-	if qs.Avg > bottleneckAvg {
-		bottleneck = "queue_wait"
-		bottleneckAvg = qs.Avg
-	}
-	if ws.Avg > bottleneckAvg {
-		bottleneck = "write"
-		bottleneckAvg = ws.Avg
-	}
 
 	hits, miss := uint64(0), uint64(0)
 	cacheHitRate := 0.0
@@ -343,19 +317,41 @@ func (s *Server) Start(ctx context.Context) error {
 		"dropped_packets", s.DroppedPackets.Load(),
 		"handler_errors", s.HandlerErrors.Load(),
 		"write_errors", s.WriteErrors.Load(),
-		"queue_wait_avg", qs.Avg,
-		"queue_wait_max", qs.Max,
-		"resolve_avg", rs.Avg,
-		"resolve_max", rs.Max,
-		"write_avg", ws.Avg,
-		"write_max", ws.Max,
-		"bottleneck_stage", bottleneck,
-		"bottleneck_avg", bottleneckAvg,
 		"cache_hits", hits,
 		"cache_miss", miss,
 		"cache_hit_rate", cacheHitRate,
 	)
+	if obsEnabled {
+		s.writePerfReport()
+	}
+
 	return ctx.Err()
+}
+
+func (s *Server) writePerfReport() {
+	if !obs.Enabled() {
+		return
+	}
+	path := s.cfg.PerfReport
+	if path == "" {
+		return
+	}
+	data, err := obs.GlobalRegistry.ReportJSON()
+	if err != nil {
+		s.logger.Error("failed to build perf report", "error", err)
+		return
+	}
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
+			s.logger.Error("failed to create perf report dir", "dir", dir, "error", mkErr)
+			return
+		}
+	}
+	if wErr := os.WriteFile(path, data, 0o644); wErr != nil {
+		s.logger.Error("failed to write perf report", "path", path, "error", wErr)
+		return
+	}
+	s.logger.Info("perf report written", "path", path, "bytes", len(data))
 }
 
 func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
@@ -448,18 +444,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 func (s *Server) worker(ctx context.Context) {
 	var handlerErrCount uint64
 	for job := range s.jobQueue {
-		timed := job.enqueuedNs != 0
-		var resStart time.Time
-		if timed {
-			now := time.Now().UnixNano()
-			wait := time.Duration(now - job.enqueuedNs)
-			s.queueWait.Observe(wait)
-			resStart = time.Unix(0, now)
-		}
 		resp, cleanup, err := s.resolver.Resolve(ctx, (*job.dataPtr)[:job.n])
-		if timed {
-			s.resolve.Observe(time.Since(resStart))
-		}
 		if err != nil {
 			s.HandlerErrors.Add(1)
 			handlerErrCount++
@@ -487,10 +472,6 @@ func (s *Server) worker(ctx context.Context) {
 			s.bufPool.Put(job.dataPtr)
 			continue
 		}
-		var wStart time.Time
-		if timed {
-			wStart = time.Now()
-		}
 		// Send write to per-socket writer to avoid concurrent writes on the same conn.
 		if job.writer != nil {
 			select {
@@ -509,9 +490,6 @@ func (s *Server) worker(ctx context.Context) {
 			if cleanup != nil {
 				cleanup()
 			}
-		}
-		if timed {
-			s.write.Observe(time.Since(wStart))
 		}
 	}
 }
