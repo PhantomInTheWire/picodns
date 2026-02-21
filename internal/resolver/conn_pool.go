@@ -114,17 +114,3 @@ func (p *connPool) release(uc *udpConn) {
 	uc.inUse = false
 	uc.lastUsed = time.Now()
 }
-
-// close closes all connections in the pool
-// nolint:unused // Reserved for future use
-func (p *connPool) close() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, uc := range p.conns {
-		if uc.conn != nil {
-			_ = uc.conn.Close()
-		}
-	}
-	p.conns = p.conns[:0]
-}
