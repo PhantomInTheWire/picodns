@@ -295,7 +295,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 
 		resultChan := make(chan queryResult, len(servers))
 		queryCtx, cancelQueries := context.WithCancel(ctx)
-		defer cancelQueries()
 		var wg sync.WaitGroup
 
 		for i, server := range servers {
@@ -394,6 +393,8 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					if stats != nil {
 						stats.hops++
 					}
+					// We have a winner; cancel outstanding queries for this hop.
+					cancelQueries()
 					go func(ch <-chan queryResult) {
 						for r := range ch {
 							if r.cleanup != nil {
@@ -410,6 +411,8 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				lastErr = res.err
 			}
 		}
+		// Ensure we always cancel per-hop query context.
+		cancelQueries()
 
 		if resp == nil {
 			if debugEnabled {
