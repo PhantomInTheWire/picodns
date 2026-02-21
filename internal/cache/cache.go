@@ -121,9 +121,13 @@ func (c *Cache) GetWithMetadataKey(key uint64) (value []byte, expires time.Time,
 
 	// Update hit count atomically to avoid write lock contention.
 	// LRU is updated only on write to keep reads lock-free.
-	atomic.AddUint64(&item.hits, 1)
+	hits = atomic.AddUint64(&item.hits, 1)
+	value = item.value
+	expires = item.expires
+	origTTL = item.origTTL
+	ttlOffs = item.ttlOffs
 	shard.mu.RUnlock()
-	return item.value, item.expires, atomic.LoadUint64(&item.hits), item.origTTL, item.ttlOffs, true
+	return value, expires, hits, origTTL, ttlOffs, true
 }
 
 func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
