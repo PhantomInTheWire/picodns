@@ -142,11 +142,12 @@ func (c *Cached) ResolveFromCache(ctx context.Context, req []byte) ([]byte, func
 	if !ok {
 		return nil, nil, false
 	}
-	resp, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, hdr.ID)
+	resp, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, hdr.ID)
 	if ok {
 		if c.ObsEnabled {
 			c.CacheHits.Add(1)
 		}
+		c.maybePrefetch(key, req, expires, hits, origTTL)
 		return resp, cleanup, true
 	}
 	return nil, nil, false
