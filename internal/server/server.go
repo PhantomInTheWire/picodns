@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"picodns/internal/config"
@@ -492,29 +491,4 @@ func (s *Server) worker(ctx context.Context) {
 			}
 		}
 	}
-}
-
-func listenUDPPacket(addr string, reusePort bool) (net.PacketConn, error) {
-	if !reusePort {
-		return net.ListenPacket("udp", addr)
-	}
-	var lc net.ListenConfig
-	lc.Control = func(network, address string, c syscall.RawConn) error {
-		var ctrlErr error
-		err := c.Control(func(fd uintptr) {
-			if e := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); e != nil {
-				ctrlErr = e
-				return
-			}
-			if e := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEPORT, 1); e != nil {
-				ctrlErr = e
-				return
-			}
-		})
-		if err != nil {
-			return err
-		}
-		return ctrlErr
-	}
-	return lc.ListenPacket(context.Background(), "udp", addr)
 }
