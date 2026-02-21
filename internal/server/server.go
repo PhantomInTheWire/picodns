@@ -59,6 +59,32 @@ type Server struct {
 	cacheCounters func() (hits uint64, miss uint64)
 }
 
+// servfailFromRequestInPlace rewrites req in-place into a minimal SERVFAIL response.
+// The returned slice references req.
+func servfailFromRequestInPlace(req []byte) ([]byte, bool) {
+	hdr, err := dns.ReadHeader(req)
+	if err != nil || hdr.QDCount == 0 {
+		return nil, false
+	}
+	nameEnd, err := dns.SkipName(req, dns.HeaderLen)
+	if err != nil {
+		return nil, false
+	}
+	qEnd := nameEnd + 4 // qtype + qclass
+	if qEnd > len(req) {
+		return nil, false
+	}
+
+	hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & 0x000F)
+	hdr.QDCount = 1
+	hdr.ANCount = 0
+	hdr.NSCount = 0
+	hdr.ARCount = 0
+	_ = dns.WriteHeader(req, hdr)
+
+	return req[:qEnd], true
+}
+
 func New(cfg config.Config, logger *slog.Logger, res types.Resolver) *Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -359,19 +385,27 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 		}
 
 		resp, cleanup, err := s.resolver.Resolve(ctx, buf)
-		s.bufPool.Put(bufPtr)
 		if err != nil {
 			s.HandlerErrors.Add(1)
 			s.logger.Error("handler error", "error", err)
 			if cleanup != nil {
 				cleanup()
 			}
+			// Best-effort SERVFAIL response.
+			if sf, ok := servfailFromRequestInPlace(buf); ok {
+				binary.BigEndian.PutUint16(lenBuf[:], uint16(len(sf)))
+				if _, werr := conn.Write(lenBuf[:]); werr == nil {
+					_, _ = conn.Write(sf)
+				}
+			}
+			s.bufPool.Put(bufPtr)
 			return
 		}
 		if len(resp) == 0 {
 			if cleanup != nil {
 				cleanup()
 			}
+			s.bufPool.Put(bufPtr)
 			continue
 		}
 		if len(resp) > int(^uint16(0)) {
@@ -380,6 +414,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 			if cleanup != nil {
 				cleanup()
 			}
+			s.bufPool.Put(bufPtr)
 			return
 		}
 
@@ -390,6 +425,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 			if cleanup != nil {
 				cleanup()
 			}
+			s.bufPool.Put(bufPtr)
 			return
 		}
 		if _, err := conn.Write(resp); err != nil {
@@ -398,12 +434,14 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 			if cleanup != nil {
 				cleanup()
 			}
+			s.bufPool.Put(bufPtr)
 			return
 		}
 
 		if cleanup != nil {
 			cleanup()
 		}
+		s.bufPool.Put(bufPtr)
 	}
 }
 
@@ -427,6 +465,17 @@ func (s *Server) worker(ctx context.Context) {
 			handlerErrCount++
 			if handlerErrCount == 1 || handlerErrCount%1000 == 0 {
 				s.logger.Error("handler error", "error", err, "count", handlerErrCount)
+			}
+			// Best-effort SERVFAIL so clients don't time out.
+			if job.writer != nil {
+				if sf, ok := servfailFromRequestInPlace((*job.dataPtr)[:job.n]); ok {
+					select {
+					case job.writer.ch <- udpWrite{resp: sf, addr: job.addr, cleanup: nil, bufPtr: job.dataPtr}:
+						continue
+					default:
+						// Fall through to release buffer.
+					}
+				}
 			}
 			s.bufPool.Put(job.dataPtr)
 			continue
