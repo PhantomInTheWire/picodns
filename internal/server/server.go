@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"picodns/internal/config"
@@ -23,8 +24,20 @@ type queryJob struct {
 	dataPtr    *[]byte
 	n          int
 	addr       net.Addr
-	conn       net.PacketConn
+	writer     *udpWriter
 	enqueuedNs int64
+}
+
+type udpWriter struct {
+	conn net.PacketConn
+	ch   chan udpWrite
+}
+
+type udpWrite struct {
+	resp    []byte
+	addr    net.Addr
+	cleanup func()
+	bufPtr  *[]byte
 }
 
 type Server struct {
@@ -75,6 +88,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	var workersWg sync.WaitGroup
 	var readersWg sync.WaitGroup
+	var writersWg sync.WaitGroup
 	startTime := time.Now()
 	obsEnabled := s.cfg.Stats
 
@@ -83,6 +97,7 @@ func (s *Server) Start(ctx context.Context) error {
 		readersWg.Wait()
 		close(s.jobQueue)
 		workersWg.Wait()
+		writersWg.Wait()
 	}
 
 	for i := 0; i < s.cfg.Workers; i++ {
@@ -93,57 +108,130 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	}
 
+	udpSockets := s.cfg.UDPSockets
+	if udpSockets <= 0 {
+		udpSockets = 1
+	}
+	cacheResolver, _ := s.resolver.(types.CacheResolver)
+
 	for _, addr := range s.cfg.ListenAddrs {
-		conn, err := net.ListenPacket("udp", addr)
-		if err != nil {
-			shutdown()
-			return err
-		}
-		s.logger.Info("dns server listening", "listen", addr)
-
-		readersWg.Add(1)
-		go func(c net.PacketConn) {
-			defer readersWg.Done()
-			defer func() { _ = c.Close() }()
-
-			go func() {
-				<-ctx.Done()
-				_ = c.Close()
-			}()
-
-			for {
-				bufPtr := s.bufPool.Get()
-				buf := *bufPtr
-				n, addr, readErr := c.ReadFrom(buf)
-				if readErr != nil {
-					s.bufPool.Put(bufPtr)
-					if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
-						return
-					}
-					s.logger.Error("read error", "error", readErr)
-					continue
-				}
-
-				s.TotalQueries.Add(1)
-				var enqNs int64
-				if obsEnabled {
-					// Sample timings (1/256) to minimize overhead during benchmarks.
-					if (s.sample.Add(1) & 0xFF) == 0 {
-						enqNs = time.Now().UnixNano()
-					}
-				}
-
-				select {
-				case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, conn: c, enqueuedNs: enqNs}:
-				default:
-					s.bufPool.Put(bufPtr)
-					dropped := s.DroppedPackets.Add(1)
-					if dropped == 1 || dropped%100 == 0 {
-						s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", dropped)
-					}
-				}
+		for i := 0; i < udpSockets; i++ {
+			conn, err := listenUDPPacket(addr, udpSockets > 1)
+			if err != nil {
+				shutdown()
+				return err
 			}
-		}(conn)
+			w := &udpWriter{conn: conn, ch: make(chan udpWrite, s.cfg.Workers)}
+			writersWg.Add(1)
+			go func(writer *udpWriter) {
+				defer writersWg.Done()
+				// Rate-limit write errors.
+				var writeErrCount uint64
+				flushItem := func(item udpWrite) {
+					if len(item.resp) > 0 {
+						if _, writeErr := writer.conn.WriteTo(item.resp, item.addr); writeErr != nil {
+							s.WriteErrors.Add(1)
+							writeErrCount++
+							if writeErrCount == 1 || writeErrCount%1000 == 0 {
+								s.logger.Error("write error", "error", writeErr, "count", writeErrCount)
+							}
+						}
+					}
+					if item.cleanup != nil {
+						item.cleanup()
+					}
+					if item.bufPtr != nil {
+						s.bufPool.Put(item.bufPtr)
+					}
+				}
+
+				for {
+					var item udpWrite
+					var ok bool
+					select {
+					case <-ctx.Done():
+						return
+					case item, ok = <-writer.ch:
+						if !ok {
+							return
+						}
+					}
+
+					flushItem(item)
+				}
+			}(w)
+			if i == 0 {
+				s.logger.Info("dns server listening", "listen", addr, "udp_sockets", udpSockets)
+			}
+
+			readersWg.Add(1)
+			go func(writer *udpWriter) {
+				defer readersWg.Done()
+				defer func() { _ = writer.conn.Close() }()
+
+				go func() {
+					<-ctx.Done()
+					_ = writer.conn.Close()
+				}()
+
+				// Rate-limit read errors.
+				var readErrCount uint64
+				for {
+					bufPtr := s.bufPool.Get()
+					b := *bufPtr
+					b = b[:cap(b)]
+					n, addr, readErr := writer.conn.ReadFrom(b)
+					if readErr != nil {
+						s.bufPool.Put(bufPtr)
+						if ctx.Err() != nil || errors.Is(readErr, net.ErrClosed) {
+							return
+						}
+						readErrCount++
+						if readErrCount == 1 || readErrCount%1000 == 0 {
+							s.logger.Error("read error", "error", readErr, "count", readErrCount)
+						}
+						continue
+					}
+
+					s.TotalQueries.Add(1)
+					var enqNs int64
+					if obsEnabled {
+						// Sample timings (1/256) to minimize overhead during benchmarks.
+						if (s.sample.Add(1) & 0xFF) == 0 {
+							enqNs = time.Now().UnixNano()
+						}
+					}
+
+					*bufPtr = b[:n]
+					// Cache-hit fast path: serve directly without queueing.
+					// Hard separation: hits never queue behind misses.
+					if cacheResolver != nil {
+						if resp, cleanup, ok := cacheResolver.ResolveFromCache(b[:n]); ok {
+							// Direct write from reader goroutine - fastest path.
+							// No channel, no queuing, no blocking.
+							if _, err := writer.conn.WriteTo(resp, addr); err != nil {
+								s.WriteErrors.Add(1)
+							}
+							if cleanup != nil {
+								cleanup()
+							}
+							s.bufPool.Put(bufPtr)
+							continue
+						}
+					}
+
+					select {
+					case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, writer: writer, enqueuedNs: enqNs}:
+					default:
+						s.bufPool.Put(bufPtr)
+						dropped := s.DroppedPackets.Add(1)
+						if dropped == 1 || dropped%100 == 0 {
+							s.logger.Warn("dropping packet", "reason", "queue full", "dropped_total", dropped)
+						}
+					}
+				}
+			}(w)
+		}
 
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
@@ -320,6 +408,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 }
 
 func (s *Server) worker(ctx context.Context) {
+	var handlerErrCount uint64
 	for job := range s.jobQueue {
 		timed := job.enqueuedNs != 0
 		var resStart time.Time
@@ -335,7 +424,10 @@ func (s *Server) worker(ctx context.Context) {
 		}
 		if err != nil {
 			s.HandlerErrors.Add(1)
-			s.logger.Error("handler error", "error", err)
+			handlerErrCount++
+			if handlerErrCount == 1 || handlerErrCount%1000 == 0 {
+				s.logger.Error("handler error", "error", err, "count", handlerErrCount)
+			}
 			s.bufPool.Put(job.dataPtr)
 			continue
 		}
@@ -350,16 +442,52 @@ func (s *Server) worker(ctx context.Context) {
 		if timed {
 			wStart = time.Now()
 		}
-		if _, writeErr := job.conn.WriteTo(resp, job.addr); writeErr != nil {
-			s.WriteErrors.Add(1)
-			s.logger.Error("write error", "error", writeErr)
+		// Send write to per-socket writer to avoid concurrent writes on the same conn.
+		if job.writer != nil {
+			select {
+			case job.writer.ch <- udpWrite{resp: resp, addr: job.addr, cleanup: cleanup, bufPtr: job.dataPtr}:
+			default:
+				// Backpressure: drop response but release resources.
+				s.WriteErrors.Add(1)
+				if cleanup != nil {
+					cleanup()
+				}
+				s.bufPool.Put(job.dataPtr)
+			}
+		} else {
+			// Fallback (shouldn't happen).
+			s.bufPool.Put(job.dataPtr)
+			if cleanup != nil {
+				cleanup()
+			}
 		}
 		if timed {
 			s.write.Observe(time.Since(wStart))
 		}
-		if cleanup != nil {
-			cleanup()
-		}
-		s.bufPool.Put(job.dataPtr)
 	}
+}
+
+func listenUDPPacket(addr string, reusePort bool) (net.PacketConn, error) {
+	if !reusePort {
+		return net.ListenPacket("udp", addr)
+	}
+	var lc net.ListenConfig
+	lc.Control = func(network, address string, c syscall.RawConn) error {
+		var ctrlErr error
+		err := c.Control(func(fd uintptr) {
+			if e := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); e != nil {
+				ctrlErr = e
+				return
+			}
+			if e := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEPORT, 1); e != nil {
+				ctrlErr = e
+				return
+			}
+		})
+		if err != nil {
+			return err
+		}
+		return ctrlErr
+	}
+	return lc.ListenPacket(context.Background(), "udp", addr)
 }

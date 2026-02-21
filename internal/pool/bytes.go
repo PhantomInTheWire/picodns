@@ -20,9 +20,14 @@ func NewBytes(size int) *Bytes {
 }
 
 // Get retrieves a byte slice from the pool.
-// The returned slice has capacity size but length 0.
 func (p *Bytes) Get() *[]byte {
-	return p.pool.Get().(*[]byte)
+	bufPtr := p.pool.Get().(*[]byte)
+	b := *bufPtr
+	if len(b) != cap(b) {
+		b = b[:cap(b)]
+		*bufPtr = b
+	}
+	return bufPtr
 }
 
 // Put returns a byte slice to the pool.
