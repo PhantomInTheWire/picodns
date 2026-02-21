@@ -3,7 +3,6 @@ package resolver
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"picodns/internal/obs"
@@ -15,7 +14,6 @@ type rttTracker struct {
 	rtts     map[string]time.Duration
 	timeouts map[string]uint32
 	cooldown map[string]time.Time
-	dirty    atomic.Bool
 
 	tracers struct {
 		update   *obs.FuncTracer
@@ -66,7 +64,6 @@ func (t *rttTracker) Update(ctx context.Context, server string, d time.Duration)
 	delete(t.timeouts, server)
 	delete(t.cooldown, server)
 	t.mu.Unlock()
-	t.dirty.Store(true)
 }
 
 func (t *rttTracker) Timeout(ctx context.Context, server string) {
