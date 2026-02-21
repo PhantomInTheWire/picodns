@@ -33,11 +33,20 @@ func (s *stubResolver) CallCount() int {
 }
 
 func TestCachedResolverStoresAndHits(t *testing.T) {
+	var mu sync.Mutex
+	currTime := time.Now()
+	clock := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return currTime
+	}
+
 	req := makeQuery("example.com")
 	resp := makeResponse(req, 30)
-	store := cache.New(10, time.Now)
+	store := cache.New(10, clock)
 	up := &stubResolver{resp: resp}
 	res := NewCached(store, up)
+	res.clock = clock
 
 	first, _, err := res.Resolve(context.Background(), req)
 	require.NoError(t, err)
@@ -154,7 +163,7 @@ func TestCacheMetadataTracking(t *testing.T) {
 	}
 
 	key := dns.Question{Name: "test.com", Type: 1, Class: 1}
-	_, _, hits, origTTL, ok := store.GetWithMetadata(key)
+	_, _, hits, origTTL, _, ok := store.GetWithMetadata(key)
 	require.True(t, ok)
 	require.GreaterOrEqual(t, hits, uint64(6))
 	require.Equal(t, time.Duration(60)*time.Second, origTTL)
