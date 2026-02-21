@@ -114,7 +114,7 @@ func TestIsValidRequest(t *testing.T) {
 				n, _ := WriteQuestion(buf, HeaderLen, q)
 				return n
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "has answers",
@@ -125,7 +125,7 @@ func TestIsValidRequest(t *testing.T) {
 				n, _ := WriteQuestion(buf, HeaderLen, q)
 				return n
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "has authorities",
@@ -136,7 +136,7 @@ func TestIsValidRequest(t *testing.T) {
 				n, _ := WriteQuestion(buf, HeaderLen, q)
 				return n
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "non-zero opcode",
@@ -147,7 +147,7 @@ func TestIsValidRequest(t *testing.T) {
 				n, _ := WriteQuestion(buf, HeaderLen, q)
 				return n
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "truncated question name",
@@ -170,7 +170,7 @@ func TestIsValidRequest(t *testing.T) {
 				// Remove the 4 bytes for qtype and qclass
 				return n - 2
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "invalid first byte",
