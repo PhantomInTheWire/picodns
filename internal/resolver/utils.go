@@ -232,6 +232,19 @@ func setResponseID(resp []byte, id uint16) {
 	}
 }
 
+// minimizeAndSetID minimizes the response and sets the transaction ID.
+// This is a helper to avoid duplication since MinimizeResponse calls WriteHeader
+// which overwrites the transaction ID.
+func minimizeAndSetID(resp []byte, clientID uint16, keepAuthorities bool) ([]byte, error) {
+	minimized, err := dns.MinimizeResponse(resp, keepAuthorities)
+	if err != nil {
+		setResponseID(resp, clientID)
+		return resp, err
+	}
+	setResponseID(minimized, clientID)
+	return minimized, nil
+}
+
 // extractReferral extracts nameserver names and their associated glue record IPs from a DNS message.
 // It validates that NS records are in-bailiwick to prevent cache poisoning.
 func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []string) {

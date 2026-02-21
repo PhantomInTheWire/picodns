@@ -266,7 +266,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 						res.err = vErr
 						return
 					}
-					setResponseID(resp, clientID)
+					// Note: setResponseID is called later on the final returned response
 				}
 				res.resp = resp
 				res.cleanup = cleanup
@@ -368,19 +368,13 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				}
 			}
 			respMsg.Release()
-			minimized, err := dns.MinimizeResponse(resp, false)
-			if err != nil {
-				return resp, cleanup, nil
-			}
+			minimized, _ := minimizeAndSetID(resp, clientID, false)
 			return minimized, cleanup, nil
 		}
 
 		if (respMsg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
 			respMsg.Release()
-			minimized, err := dns.MinimizeResponse(resp, true)
-			if err != nil {
-				return resp, cleanup, nil
-			}
+			minimized, _ := minimizeAndSetID(resp, clientID, true)
 			return minimized, cleanup, nil
 		}
 
