@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -18,6 +19,7 @@ type Config struct {
 	Prefetch      bool
 	Stats         bool
 	StatsInterval time.Duration
+	PerfReport    string
 }
 
 func Default() Config {
@@ -33,6 +35,8 @@ func Default() Config {
 		Prefetch:      true,
 		Stats:         false,
 		StatsInterval: 0,
+		// Default to a repo-visible path when running locally.
+		PerfReport: filepath.Join("perf", "picodns-perf.json"),
 	}
 }
 
@@ -54,6 +58,7 @@ func BindFlags(cfg *Config) {
 	flag.BoolVar(&cfg.Prewarm, "prewarm", cfg.Prewarm, "pre-warm recursive resolver cache on startup")
 	flag.BoolVar(&cfg.Prefetch, "prefetch", cfg.Prefetch, "proactively refresh hot cache entries")
 	flag.BoolVar(&cfg.Stats, "stats", cfg.Stats, "emit one-time stats summary on shutdown")
+	flag.StringVar(&cfg.PerfReport, "perf-report", cfg.PerfReport, "write perf JSON report to this path (perf builds only)")
 	flag.StringVar(&statsInterval, "stats-interval", cfg.StatsInterval.String(), "DEPRECATED: enables -stats when >0")
 
 	flag.Parse()

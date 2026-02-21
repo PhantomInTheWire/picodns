@@ -1,15 +1,24 @@
 package resolver
 
 import (
+	"context"
 	"net"
 	"sync"
 	"time"
+
+	"picodns/internal/obs"
 )
 
 // connPool manages a pool of reusable UDP connections
 type connPool struct {
 	mu    sync.Mutex
 	conns []*udpConn
+
+	// Function tracers
+	tracers struct {
+		get     *obs.FuncTracer
+		release *obs.FuncTracer
+	}
 }
 
 // udpConn wraps a UDP connection with its last used time for idle timeout
@@ -21,15 +30,27 @@ type udpConn struct {
 
 // newConnPool creates a new connection pool with default settings
 func newConnPool() *connPool {
-	return &connPool{
+	p := &connPool{
 		conns: make([]*udpConn, 0, ConnPoolMaxConns),
 	}
+
+	// Initialize tracers
+	p.tracers.get = obs.NewFuncTracer("connPool.get", nil)
+	p.tracers.release = obs.NewFuncTracer("connPool.release", nil)
+
+	// Register tracers
+	obs.GlobalRegistry.Register(p.tracers.get)
+	obs.GlobalRegistry.Register(p.tracers.release)
+
+	return p
 }
 
 // get returns a connection from the pool or creates a new one.
 // Stale connections (idle longer than ConnPoolIdleTimeout) are closed and removed.
 // If the pool is exhausted, it creates an ephemeral connection as a fallback.
-func (p *connPool) get() (*net.UDPConn, func(), error) {
+func (p *connPool) get(ctx context.Context) (*net.UDPConn, func(), error) {
+	defer p.tracers.get.Trace()()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -85,6 +106,8 @@ func (p *connPool) get() (*net.UDPConn, func(), error) {
 
 // release marks a connection as available
 func (p *connPool) release(uc *udpConn) {
+	defer p.tracers.release.Trace()()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

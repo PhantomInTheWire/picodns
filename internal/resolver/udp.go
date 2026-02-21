@@ -11,6 +11,7 @@ import (
 
 	"picodns/internal/cache"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
@@ -21,6 +22,14 @@ type udpTransport struct {
 	connPool  *connPool
 	timeout   time.Duration
 	addrCache *cache.PermanentCache[string, *net.UDPAddr]
+
+	// Function tracers
+	tracers struct {
+		query       *obs.FuncTracer
+		queryUDP    *obs.FuncTracer
+		tcpQuery    *obs.FuncTracer
+		resolveAddr *obs.FuncTracer
+	}
 }
 
 func (t *udpTransport) SetObsEnabled(enabled bool) {
@@ -38,21 +47,36 @@ func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration
 		addrCache: cache.NewPermanentCache[string, *net.UDPAddr](),
 	}
 	t.addrCache.MaxLen = maxAddrCacheEntries
+
+	// Initialize tracers
+	t.tracers.query = obs.NewFuncTracer("udpTransport.Query", nil)
+	t.tracers.queryUDP = obs.NewFuncTracer("queryUDP", t.tracers.query)
+	t.tracers.tcpQuery = obs.NewFuncTracer("tcpQueryWithValidation", t.tracers.query)
+	t.tracers.resolveAddr = obs.NewFuncTracer("udpTransport.resolveAddr", t.tracers.query)
+
+	// Register tracers
+	obs.GlobalRegistry.Register(t.tracers.query)
+	obs.GlobalRegistry.Register(t.tracers.queryUDP)
+	obs.GlobalRegistry.Register(t.tracers.tcpQuery)
+	obs.GlobalRegistry.Register(t.tracers.resolveAddr)
+
 	return t
 }
 
 func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]byte, func(), error) {
+	defer t.tracers.query.Trace()()
+
 	raddr, ok := t.addrCache.Get(server)
 	if !ok {
 		var err error
-		raddr, err = net.ResolveUDPAddr("udp", server)
+		raddr, err = t.resolveAddr(ctx, server)
 		if err != nil {
 			return nil, nil, err
 		}
 		t.addrCache.Set(server, raddr)
 	}
 
-	resp, release, needsTCP, err := queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, false)
+	resp, release, needsTCP, err := t.queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, false)
 	if err != nil {
 		if ne, ok := err.(net.Error); ok && ne.Timeout() {
 			slog.Debug("dns udp query timeout", "server", server)
@@ -63,22 +87,29 @@ func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]
 	if needsTCP {
 		slog.Debug("dns udp truncated, fallback to tcp", "server", server)
 		release()
-		resp, err := tcpQueryWithValidation(ctx, server, req, t.timeout, false)
+		resp, err := t.tcpQueryWithValidation(ctx, server, req, t.timeout, false)
 		return resp, nil, err
 	}
 
 	return resp, release, nil
 }
 
+func (t *udpTransport) resolveAddr(ctx context.Context, server string) (*net.UDPAddr, error) {
+	defer t.tracers.resolveAddr.Trace()()
+	return net.ResolveUDPAddr("udp", server)
+}
+
 // queryUDP performs a UDP DNS query. The caller must call release() when done with resp.
 // If cp is nil, a new connection is created for this query.
 // It returns a slice of a pooled buffer; the caller owns the buffer until release is called.
-func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, bufPool *pool.Bytes, cp *connPool, validate bool) (resp []byte, release func(), needsTCP bool, err error) {
+func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, bufPool *pool.Bytes, cp *connPool, validate bool) (resp []byte, release func(), needsTCP bool, err error) {
+	defer t.tracers.queryUDP.Trace()()
+
 	var conn *net.UDPConn
 	var connRelease func()
 
 	if cp != nil {
-		conn, connRelease, err = cp.get()
+		conn, connRelease, err = cp.get(ctx)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -146,7 +177,9 @@ func queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.
 
 // tcpQueryWithValidation performs a TCP DNS query to the given server.
 // If validate is true, it validates the response against the request.
-func tcpQueryWithValidation(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
+func (t *udpTransport) tcpQueryWithValidation(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
+	defer t.tracers.tcpQuery.Trace()()
+
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", server)
 	if err != nil {

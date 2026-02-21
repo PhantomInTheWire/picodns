@@ -115,42 +115,10 @@ func main() {
 				hitRate = float64(snap.Hits) / float64(snap.Hits+snap.Miss)
 			}
 
-			bottleneck := "upstream"
-			bAvg := snap.Upstream.Avg
-			if snap.ParseReq.Avg > bAvg {
-				bottleneck = "parse_req"
-				bAvg = snap.ParseReq.Avg
-			}
-			if snap.CacheGet.Avg > bAvg {
-				bottleneck = "cache_get"
-				bAvg = snap.CacheGet.Avg
-			}
-			if snap.CacheCopy.Avg > bAvg {
-				bottleneck = "cache_copy"
-				bAvg = snap.CacheCopy.Avg
-			}
-			if snap.Validate.Avg > bAvg {
-				bottleneck = "validate"
-				bAvg = snap.Validate.Avg
-			}
-			if snap.CacheSet.Avg > bAvg {
-				bottleneck = "cache_set"
-				bAvg = snap.CacheSet.Avg
-			}
-
 			logger.Info("resolver cache stats",
 				"cache_hits", snap.Hits,
 				"cache_miss", snap.Miss,
 				"cache_hit_rate", hitRate,
-				"parse_req_avg", snap.ParseReq.Avg,
-				"cache_get_avg", snap.CacheGet.Avg,
-				"cache_copy_avg", snap.CacheCopy.Avg,
-				"upstream_avg", snap.Upstream.Avg,
-				"validate_avg", snap.Validate.Avg,
-				"cache_set_avg", snap.CacheSet.Avg,
-				"total_avg", snap.Total.Avg,
-				"resolver_bottleneck_stage", bottleneck,
-				"resolver_bottleneck_avg", bAvg,
 			)
 		}
 	}

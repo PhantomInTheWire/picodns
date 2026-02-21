@@ -12,6 +12,7 @@ import (
 
 	"picodns/internal/cache"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
@@ -48,6 +49,15 @@ type Recursive struct {
 	rttTracker      *rttTracker
 	ObsEnabled      bool
 	querySem        chan struct{}
+
+	// Function tracers
+	tracers struct {
+		resolve          *obs.FuncTracer
+		resolveIterative *obs.FuncTracer
+		resolveNSNames   *obs.FuncTracer
+		warmup           *obs.FuncTracer
+		warmupRTT        *obs.FuncTracer
+	}
 }
 
 // NewRecursive creates a new recursive DNS resolver with the provided options.
@@ -60,10 +70,27 @@ func NewRecursive(opts ...Option) *Recursive {
 		logger:          slog.Default(),
 		nsCache:         cache.NewTTL[string, []string](nil),
 		delegationCache: newDelegationCache(),
-		rttTracker:      newRTTTracker(),
 		querySem:        make(chan struct{}, 256),
 	}
 	r.nsCache.MaxLen = maxNSCacheEntries
+
+	// Initialize tracers
+	r.tracers.resolve = obs.NewFuncTracer("Recursive.Resolve", nil)
+	r.tracers.resolveIterative = obs.NewFuncTracer("Recursive.resolveIterative", r.tracers.resolve)
+	r.tracers.resolveNSNames = obs.NewFuncTracer("Recursive.resolveNSNames", r.tracers.resolveIterative)
+	r.tracers.warmup = obs.NewFuncTracer("Recursive.Warmup", r.tracers.resolve)
+	r.tracers.warmupRTT = obs.NewFuncTracer("Recursive.warmupRTT", r.tracers.warmup)
+
+	// Initialize RTT tracker with tracer
+	r.rttTracker = newRTTTracker(r.tracers.resolveIterative)
+
+	// Register tracers
+	obs.GlobalRegistry.Register(r.tracers.resolve)
+	obs.GlobalRegistry.Register(r.tracers.resolveIterative)
+	obs.GlobalRegistry.Register(r.tracers.resolveNSNames)
+	obs.GlobalRegistry.Register(r.tracers.warmup)
+	obs.GlobalRegistry.Register(r.tracers.warmupRTT)
+
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -115,6 +142,8 @@ type resolutionStats struct {
 }
 
 func (r *Recursive) Warmup(ctx context.Context) {
+	defer r.tracers.warmup.Trace()()
+
 	r.logger.Info("warming up recursive resolver cache for common TLDs")
 	infoEnabled := r.logger != nil && r.logger.Enabled(ctx, slog.LevelInfo)
 	var start time.Time
@@ -177,6 +206,8 @@ func (r *Recursive) Warmup(ctx context.Context) {
 }
 
 func (r *Recursive) warmupRTT(ctx context.Context) {
+	defer r.tracers.warmupRTT.Trace()()
+
 	if r.transport == nil || len(r.rootServers) == 0 {
 		return
 	}
@@ -208,7 +239,7 @@ func (r *Recursive) warmupRTT(ctx context.Context) {
 				return
 			}
 			if dns.ValidateResponseWithRequest(dns.Header{ID: id, QDCount: 1}, []dns.Question{{Name: ".", Type: dns.TypeNS, Class: dns.ClassIN}}, resp) == nil {
-				r.rttTracker.Update(srv, time.Since(startQ))
+				r.rttTracker.Update(tctx, srv, time.Since(startQ))
 			}
 			if cleanup != nil {
 				cleanup()
@@ -220,6 +251,8 @@ func (r *Recursive) warmupRTT(ctx context.Context) {
 }
 
 func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
+	defer r.tracers.resolve.Trace()()
+
 	reqMsg, err := dns.ReadMessagePooled(req)
 	if err != nil || len(reqMsg.Questions) == 0 {
 		return nil, nil, errors.New("recursive resolver: invalid request")
@@ -247,6 +280,8 @@ func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), er
 // performs bailiwick checking: root can provide glue for any TLD, but
 // TLDs should only provide glue for in-bailiwick nameservers.
 func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, questions []dns.Question, name string, depth int, seenCnames map[string]struct{}, stats *resolutionStats, isGlue bool) ([]byte, func(), error) {
+	defer r.tracers.resolveIterative.Trace()()
+
 	if depth >= maxRecursionDepth {
 		return nil, nil, ErrMaxDepth
 	}
@@ -291,7 +326,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		if isGlue {
 			maxServers = glueMaxServers
 		}
-		servers = r.rttTracker.SortBest(servers, maxServers)
+		servers = r.rttTracker.SortBest(ctx, servers, maxServers)
 
 		resultChan := make(chan queryResult, len(servers))
 		queryCtx, cancelQueries := context.WithCancel(ctx)
@@ -302,7 +337,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			go func(srv string, idx int) {
 				defer wg.Done()
 				if idx > 0 {
-					stagger := r.rttTracker.Get(servers[idx-1]) * rttMultiplier / 10
+					stagger := r.rttTracker.Get(queryCtx, servers[idx-1]) * rttMultiplier / 10
 					if stagger < minStaggerDelay {
 						stagger = minStaggerDelay
 					}
@@ -332,7 +367,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				}
 				query := buf[:n]
 				startQ := time.Now()
-				rtt := r.rttTracker.Get(srv)
+				rtt := r.rttTracker.Get(queryCtx, srv)
 				if rtt <= 0 {
 					rtt = unknownRTT
 				}
@@ -355,10 +390,10 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				cancel()
 				r.bufPool.Put(bufPtr)
 				if err == nil {
-					r.rttTracker.Update(srv, time.Since(startQ))
+					r.rttTracker.Update(queryCtx, srv, time.Since(startQ))
 				} else {
 					if ne, ok := err.(net.Error); ok && ne.Timeout() {
-						r.rttTracker.Timeout(srv)
+						r.rttTracker.Timeout(queryCtx, srv)
 					}
 				}
 				if err == nil {
@@ -395,6 +430,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					}
 					// We have a winner; cancel outstanding queries for this hop.
 					cancelQueries()
+					// Drain remaining results to ensure cleanups run.
 					go func(ch <-chan queryResult) {
 						for r := range ch {
 							if r.cleanup != nil {
@@ -554,6 +590,8 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 // resolveNSNames resolves the IP addresses of nameservers when glue records are missing.
 // This is a recursive call to get A records for NS hostnames.
 func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth int, seenCnames map[string]struct{}, stats *resolutionStats) ([]string, error) {
+	defer r.tracers.resolveNSNames.Trace()()
+
 	if depth >= maxRecursionDepth {
 		return nil, ErrMaxDepth
 	}

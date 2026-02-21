@@ -30,18 +30,20 @@ type Cached struct {
 	logger     *slog.Logger
 	CacheHits  atomic.Uint64
 	CacheMiss  atomic.Uint64
-	sample     atomic.Uint64
 
-	parseReq   obs.DurationStat
-	cacheGet   obs.DurationStat
-	cacheCopy  obs.DurationStat
-	upstreamDo obs.DurationStat
-	validate   obs.DurationStat
-	cacheSet   obs.DurationStat
-	total      obs.DurationStat
+	// Function tracers for observability
+	tracers struct {
+		resolveFromCache *obs.FuncTracer
+		resolve          *obs.FuncTracer
+		getCachedWithKey *obs.FuncTracer
+		acquireInflight  *obs.FuncTracer
+		releaseInflight  *obs.FuncTracer
+		setInflightErr   *obs.FuncTracer
+		setCache         *obs.FuncTracer
+		maybePrefetch    *obs.FuncTracer
+		cacheKeyFromQ    *obs.FuncTracer
+	}
 }
-
-const durationSampleMask = 0xFF // 1/256 samples
 
 type inflightCall struct {
 	done chan struct{}
@@ -49,7 +51,7 @@ type inflightCall struct {
 }
 
 func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
-	return &Cached{
+	c := &Cached{
 		cache:    cacheStore,
 		upstream: upstream,
 		bufPool:  pool.DefaultPool,
@@ -57,36 +59,47 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 		clock:    time.Now,
 		logger:   slog.Default(),
 	}
+
+	// Initialize tracers
+	c.tracers.resolveFromCache = obs.NewFuncTracer("Cached.ResolveFromCache", nil)
+	c.tracers.resolve = obs.NewFuncTracer("Cached.Resolve", nil)
+	c.tracers.getCachedWithKey = obs.NewFuncTracer("Cached.getCachedWithMetadataKey", c.tracers.resolve)
+	c.tracers.acquireInflight = obs.NewFuncTracer("Cached.acquireInflight", c.tracers.resolve)
+	c.tracers.releaseInflight = obs.NewFuncTracer("Cached.releaseInflight", c.tracers.resolve)
+	c.tracers.setInflightErr = obs.NewFuncTracer("Cached.setInflightErr", c.tracers.resolve)
+	c.tracers.setCache = obs.NewFuncTracer("Cached.setCache", c.tracers.resolve)
+	c.tracers.maybePrefetch = obs.NewFuncTracer("Cached.maybePrefetchKey", c.tracers.resolve)
+	c.tracers.cacheKeyFromQ = obs.NewFuncTracer("cacheKeyFromQuestion", c.tracers.resolve)
+
+	// Register with global registry
+	obs.GlobalRegistry.Register(c.tracers.resolveFromCache)
+	obs.GlobalRegistry.Register(c.tracers.resolve)
+	obs.GlobalRegistry.Register(c.tracers.getCachedWithKey)
+	obs.GlobalRegistry.Register(c.tracers.acquireInflight)
+	obs.GlobalRegistry.Register(c.tracers.releaseInflight)
+	obs.GlobalRegistry.Register(c.tracers.setInflightErr)
+	obs.GlobalRegistry.Register(c.tracers.setCache)
+	obs.GlobalRegistry.Register(c.tracers.maybePrefetch)
+	obs.GlobalRegistry.Register(c.tracers.cacheKeyFromQ)
+
+	return c
 }
 
 type CachedStatsSnapshot struct {
 	Hits uint64
 	Miss uint64
-
-	ParseReq  obs.DurationSnapshot
-	CacheGet  obs.DurationSnapshot
-	CacheCopy obs.DurationSnapshot
-	Upstream  obs.DurationSnapshot
-	Validate  obs.DurationSnapshot
-	CacheSet  obs.DurationSnapshot
-	Total     obs.DurationSnapshot
 }
 
 func (c *Cached) StatsSnapshot() CachedStatsSnapshot {
 	return CachedStatsSnapshot{
-		Hits:      c.CacheHits.Load(),
-		Miss:      c.CacheMiss.Load(),
-		ParseReq:  c.parseReq.Snapshot(),
-		CacheGet:  c.cacheGet.Snapshot(),
-		CacheCopy: c.cacheCopy.Snapshot(),
-		Upstream:  c.upstreamDo.Snapshot(),
-		Validate:  c.validate.Snapshot(),
-		CacheSet:  c.cacheSet.Snapshot(),
-		Total:     c.total.Snapshot(),
+		Hits: c.CacheHits.Load(),
+		Miss: c.CacheMiss.Load(),
 	}
 }
 
-func (c *Cached) ResolveFromCache(req []byte) ([]byte, func(), bool) {
+func (c *Cached) ResolveFromCache(ctx context.Context, req []byte) ([]byte, func(), bool) {
+	defer c.tracers.resolveFromCache.Trace()()
+
 	if c.cache == nil {
 		return nil, nil, false
 	}
@@ -98,7 +111,7 @@ func (c *Cached) ResolveFromCache(req []byte) ([]byte, func(), bool) {
 	if err != nil || compressed {
 		return nil, nil, false
 	}
-	resp, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, hdr.ID, false)
+	resp, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(ctx, key, hdr.ID, false)
 	if ok {
 		if c.ObsEnabled {
 			c.CacheHits.Add(1)
@@ -109,25 +122,21 @@ func (c *Cached) ResolveFromCache(req []byte) ([]byte, func(), bool) {
 }
 
 func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
+	defer c.tracers.resolve.Trace()()
+
 	var start time.Time
 	debugEnabled := c.logger != nil && c.logger.Enabled(ctx, slog.LevelDebug)
 	if debugEnabled {
 		start = time.Now()
 	}
-	sample := c.ObsEnabled && (c.sample.Add(1)&durationSampleMask) == 0
-	var totalStart time.Time
-	var parseStart time.Time
-	if sample {
-		totalStart = time.Now()
-		parseStart = totalStart
-	}
+
 	// Fast path: avoid full parsing when we can.
 	if c.cache != nil {
 		hdr, hErr := dns.ReadHeader(req)
 		if hErr == nil && hdr.QDCount > 0 {
 			key, _, _, _, compressed, kErr := dns.HashQuestionKeyFromWire(req, dns.HeaderLen)
 			if kErr == nil && !compressed {
-				cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, hdr.ID, sample)
+				cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(ctx, key, hdr.ID, c.ObsEnabled)
 				if ok {
 					if c.ObsEnabled {
 						c.CacheHits.Add(1)
@@ -135,14 +144,11 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 					if c.Prefetch && hits > prefetchThreshold {
 						remaining := expires.Sub(c.clock())
 						if remaining < origTTL/prefetchRemainingRatio {
-							c.maybePrefetchKey(key, req)
+							c.maybePrefetchKey(ctx, key, req)
 						}
 					}
 					if debugEnabled {
 						c.logger.Debug("dns cache hit", "duration", time.Since(start))
-					}
-					if sample {
-						c.total.Observe(time.Since(totalStart))
 					}
 					return cached, cleanup, nil
 				}
@@ -150,22 +156,15 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		}
 	}
 
-	parseStart = time.Now()
 	reqMsg, err := dns.ReadMessagePooled(req)
-	if sample {
-		c.parseReq.Observe(time.Since(parseStart))
-	}
 	if err != nil || len(reqMsg.Questions) == 0 {
-		if sample {
-			c.total.Observe(time.Since(totalStart))
-		}
 		return c.upstream.Resolve(ctx, req)
 	}
 	q := reqMsg.Questions[0]
 	reqHeader := reqMsg.Header
-	key := cacheKeyFromQuestion(q)
+	key := c.cacheKeyFromQuestion(ctx, q)
 
-	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID, sample)
+	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(ctx, q, reqHeader.ID, c.ObsEnabled)
 	if ok {
 		if c.ObsEnabled {
 			c.CacheHits.Add(1)
@@ -173,7 +172,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		if c.Prefetch && hits > prefetchThreshold {
 			remaining := expires.Sub(c.clock())
 			if remaining < origTTL/prefetchRemainingRatio {
-				c.maybePrefetchKey(key, req)
+				c.maybePrefetchKey(ctx, key, req)
 			}
 		}
 		if debugEnabled {
@@ -184,115 +183,69 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 				"duration", time.Since(start))
 		}
 		reqMsg.Release()
-		if sample {
-			c.total.Observe(time.Since(totalStart))
-		}
 		return cached, cleanup, nil
 	}
 
-	call, leader := c.acquireInflight(key)
+	call, leader := c.acquireInflight(ctx, key)
 	if !leader {
 		reqMsg.Release()
 		select {
 		case <-ctx.Done():
-			if sample {
-				c.total.Observe(time.Since(totalStart))
-			}
 			return nil, nil, ctx.Err()
 		case <-call.done:
 		}
-		if cached, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(key, reqHeader.ID, sample); ok {
+		if cached, cleanup, _, _, _, ok := c.getCachedWithMetadataKey(ctx, key, reqHeader.ID, c.ObsEnabled); ok {
 			if c.ObsEnabled {
 				c.CacheHits.Add(1)
-			}
-			if sample {
-				c.total.Observe(time.Since(totalStart))
 			}
 			return cached, cleanup, nil
 		}
 		if c.ObsEnabled {
 			c.CacheMiss.Add(1)
 		}
-		if sample {
-			c.total.Observe(time.Since(totalStart))
-		}
 		if call.err != nil {
 			return nil, nil, call.err
 		}
 		return c.upstream.Resolve(ctx, req)
 	}
-	defer c.releaseInflight(key)
+	defer c.releaseInflight(ctx, key)
 
 	if c.ObsEnabled {
 		c.CacheMiss.Add(1)
 	}
-	var upStart time.Time
-	if sample {
-		upStart = time.Now()
-	}
-	resp, cleanup, err := c.upstream.Resolve(ctx, req)
-	if sample {
-		c.upstreamDo.Observe(time.Since(upStart))
-	}
 
-	var validateStart time.Time
-	if sample {
-		validateStart = time.Now()
-	}
+	resp, cleanupResp, err := c.upstream.Resolve(ctx, req)
+
 	if err != nil {
-		if sample {
-			c.validate.Observe(time.Since(validateStart))
-		}
 		if debugEnabled {
 			c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start), "error", err)
 		}
-		c.setInflightErr(key, err)
+		c.setInflightErr(ctx, key, err)
 		reqMsg.Release()
-		if sample {
-			c.total.Observe(time.Since(totalStart))
-		}
-		return resp, cleanup, err
+		return resp, cleanupResp, err
 	}
+
 	vErr := dns.ValidateResponseWithRequest(reqHeader, reqMsg.Questions, resp)
-	if sample {
-		c.validate.Observe(time.Since(validateStart))
-	}
 	if vErr != nil {
-		// ID/QR mismatches are fatal; question mismatches are common during recursion (CNAME follow).
 		if vErr == dns.ErrIDMismatch || vErr == dns.ErrNotResponse {
-			c.setInflightErr(key, vErr)
+			c.setInflightErr(ctx, key, vErr)
 			reqMsg.Release()
-			if sample {
-				c.total.Observe(time.Since(totalStart))
-			}
-			return resp, cleanup, vErr
+			return resp, cleanupResp, vErr
 		}
-		// Non-fatal: return the response, but don't cache it.
-		// This preserves prior behavior and avoids caching responses that don't match the original question.
 		if debugEnabled {
 			c.logger.Debug("dns response validation mismatch; skip cache", "name", q.Name, "type", q.Type, "error", vErr)
 		}
-		c.setInflightErr(key, nil)
+		c.setInflightErr(ctx, key, nil)
 		reqMsg.Release()
-		if sample {
-			c.total.Observe(time.Since(totalStart))
-		}
-		return resp, cleanup, nil
+		return resp, cleanupResp, nil
 	}
 	reqMsg.Release()
 
-	var setStart time.Time
-	if sample {
-		setStart = time.Now()
-	}
 	if respMsg, err := dns.ReadMessagePooled(resp); err == nil {
 		if ttl, ok := cacheTTLForResponse(resp, *respMsg, q); ok {
-			c.setCache(q, resp, ttl)
+			c.setCache(ctx, q, resp, ttl)
 		}
 		respMsg.Release()
-	}
-	if sample {
-		c.cacheSet.Observe(time.Since(setStart))
 	}
 
 	setRAFlag(resp)
@@ -300,14 +253,13 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	if debugEnabled {
 		c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start))
 	}
-	c.setInflightErr(key, nil)
-	if sample {
-		c.total.Observe(time.Since(totalStart))
-	}
-	return resp, cleanup, nil
+	c.setInflightErr(ctx, key, nil)
+	return resp, cleanupResp, nil
 }
 
-func (c *Cached) acquireInflight(key uint64) (*inflightCall, bool) {
+func (c *Cached) acquireInflight(ctx context.Context, key uint64) (*inflightCall, bool) {
+	defer c.tracers.acquireInflight.Trace()()
+
 	c.inflightMu.Lock()
 	defer c.inflightMu.Unlock()
 	if call, ok := c.inflight[key]; ok {
@@ -318,7 +270,9 @@ func (c *Cached) acquireInflight(key uint64) (*inflightCall, bool) {
 	return call, true
 }
 
-func (c *Cached) setInflightErr(key uint64, err error) {
+func (c *Cached) setInflightErr(ctx context.Context, key uint64, err error) {
+	defer c.tracers.setInflightErr.Trace()()
+
 	c.inflightMu.Lock()
 	call := c.inflight[key]
 	if call != nil {
@@ -327,7 +281,9 @@ func (c *Cached) setInflightErr(key uint64, err error) {
 	c.inflightMu.Unlock()
 }
 
-func (c *Cached) releaseInflight(key uint64) {
+func (c *Cached) releaseInflight(ctx context.Context, key uint64) {
+	defer c.tracers.releaseInflight.Trace()()
+
 	c.inflightMu.Lock()
 	call := c.inflight[key]
 	delete(c.inflight, key)
@@ -337,12 +293,13 @@ func (c *Cached) releaseInflight(key uint64) {
 	}
 }
 
-func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
+func (c *Cached) maybePrefetchKey(ctx context.Context, key uint64, req []byte) {
+	defer c.tracers.maybePrefetch.Trace()()
+
 	if _, loading := c.refreshing.LoadOrStore(key, true); loading {
 		return
 	}
 
-	// Copy req before goroutine to avoid data race with buffer pool reuse
 	reqCopy := make([]byte, len(req))
 	copy(reqCopy, req)
 
@@ -351,7 +308,6 @@ func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
 		ctx, cancel := context.WithTimeout(context.Background(), prefetchTimeout)
 		defer cancel()
 
-		// Parse request in the goroutine to derive q for TTL selection.
 		qMsg, qErr := dns.ReadMessagePooled(reqCopy)
 		var q dns.Question
 		if qErr == nil && len(qMsg.Questions) > 0 {
@@ -369,7 +325,7 @@ func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
 			if respMsg, err := dns.ReadMessagePooled(resp); err == nil {
 				if (q != dns.Question{}) {
 					if ttl, ok := cacheTTLForResponse(resp, *respMsg, q); ok {
-						c.setCache(q, resp, ttl)
+						c.setCache(ctx, q, resp, ttl)
 					}
 				}
 				respMsg.Release()
@@ -378,18 +334,17 @@ func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
 	}()
 }
 
-// getCachedWithMetadata retrieves a cached response and metadata
-func (c *Cached) getCachedWithMetadata(q dns.Question, queryID uint16, sample bool) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
+func (c *Cached) getCachedWithMetadata(ctx context.Context, q dns.Question, queryID uint16, sample bool) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
 	if c.cache == nil {
 		return nil, nil, time.Time{}, 0, 0, false
 	}
-	key := cacheKeyFromQuestion(q)
-	return c.getCachedWithMetadataKey(key, queryID, sample)
-
-	// unreachable
+	key := c.cacheKeyFromQuestion(ctx, q)
+	return c.getCachedWithMetadataKey(ctx, key, queryID, sample)
 }
 
-func cacheKeyFromQuestion(q dns.Question) uint64 {
+func (c *Cached) cacheKeyFromQuestion(ctx context.Context, q dns.Question) uint64 {
+	defer c.tracers.cacheKeyFromQ.Trace()()
+
 	q = q.Normalize()
 	h := dns.HashNormalizedNameString(q.Name)
 	h ^= uint64(q.Type) << 32
@@ -397,21 +352,12 @@ func cacheKeyFromQuestion(q dns.Question) uint64 {
 	return h
 }
 
-func (c *Cached) getCachedWithMetadataKey(key uint64, queryID uint16, sample bool) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
-	var getStart time.Time
-	if sample {
-		getStart = time.Now()
-	}
+func (c *Cached) getCachedWithMetadataKey(ctx context.Context, key uint64, queryID uint16, sample bool) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
+	defer c.tracers.getCachedWithKey.Trace()()
+
 	cachedData, expires, hits, origTTL, ttlOffs, ok := c.cache.GetWithMetadataKey(key)
-	if sample {
-		c.cacheGet.Observe(time.Since(getStart))
-	}
 	if !ok || len(cachedData) < 4 {
 		return nil, nil, time.Time{}, 0, 0, false
-	}
-	var copyStart time.Time
-	if sample {
-		copyStart = time.Now()
 	}
 
 	bufPtr := c.bufPool.Get()
@@ -427,20 +373,16 @@ func (c *Cached) getCachedWithMetadataKey(key uint64, queryID uint16, sample boo
 
 	binary.BigEndian.PutUint16(resp[0:2], queryID)
 	setRAFlag(resp)
-	// Rewrite TTLs to reflect remaining lifetime.
+
 	remaining := expires.Sub(c.clock())
 	sec := uint32(0)
 	if remaining > 0 {
 		sec = uint32(remaining / time.Second)
 	}
 	if sec > 0 {
-		// Only rewrite when TTL is actually decayed.
 		if orig := uint32(origTTL / time.Second); orig == 0 || sec < orig {
 			dns.RewriteTTLsAtOffsets(resp, sec, ttlOffs)
 		}
-	}
-	if sample {
-		c.cacheCopy.Observe(time.Since(copyStart))
 	}
 
 	cleanup := func() {
@@ -452,8 +394,9 @@ func (c *Cached) getCachedWithMetadataKey(key uint64, queryID uint16, sample boo
 	return resp, cleanup, expires, hits, origTTL, true
 }
 
-// setCache stores a raw DNS response in the cache
-func (c *Cached) setCache(q dns.Question, resp []byte, ttl time.Duration) {
+func (c *Cached) setCache(ctx context.Context, q dns.Question, resp []byte, ttl time.Duration) {
+	defer c.tracers.setCache.Trace()()
+
 	if c.cache == nil || ttl <= 0 {
 		return
 	}
@@ -472,7 +415,6 @@ func newDelegationCache() *delegationCache {
 	return &delegationCache{TTL: ttl}
 }
 
-// Set stores servers with TTL clamping (min 5s, max 24h).
 func (c *delegationCache) Set(zone string, servers []string, ttl time.Duration) {
 	if ttl > 24*time.Hour {
 		ttl = 24 * time.Hour
@@ -483,7 +425,6 @@ func (c *delegationCache) Set(zone string, servers []string, ttl time.Duration) 
 	c.TTL.Set(zone, servers, ttl)
 }
 
-// FindLongestMatchingZone finds the longest matching zone for a name.
 func (c *delegationCache) FindLongestMatchingZone(name string) (string, []string, bool) {
 	name = dns.NormalizeName(name)
 
@@ -514,17 +455,39 @@ type rttTracker struct {
 	timeouts map[string]uint32
 	cooldown map[string]time.Time
 	dirty    atomic.Bool
+
+	// Tracers
+	tracers struct {
+		update   *obs.FuncTracer
+		timeout  *obs.FuncTracer
+		get      *obs.FuncTracer
+		sortBest *obs.FuncTracer
+	}
 }
 
-func newRTTTracker() *rttTracker {
-	return &rttTracker{
+func newRTTTracker(parent *obs.FuncTracer) *rttTracker {
+	t := &rttTracker{
 		rtts:     make(map[string]time.Duration),
 		timeouts: make(map[string]uint32),
 		cooldown: make(map[string]time.Time),
 	}
+
+	t.tracers.update = obs.NewFuncTracer("rttTracker.Update", parent)
+	t.tracers.timeout = obs.NewFuncTracer("rttTracker.Timeout", parent)
+	t.tracers.get = obs.NewFuncTracer("rttTracker.Get", parent)
+	t.tracers.sortBest = obs.NewFuncTracer("rttTracker.SortBest", parent)
+
+	obs.GlobalRegistry.Register(t.tracers.update)
+	obs.GlobalRegistry.Register(t.tracers.timeout)
+	obs.GlobalRegistry.Register(t.tracers.get)
+	obs.GlobalRegistry.Register(t.tracers.sortBest)
+
+	return t
 }
 
-func (t *rttTracker) Update(server string, d time.Duration) {
+func (t *rttTracker) Update(ctx context.Context, server string, d time.Duration) {
+	defer t.tracers.update.Trace()()
+
 	t.mu.Lock()
 	if len(t.rtts) > maxRTTTrackerEntries {
 		for k := range t.rtts {
@@ -546,7 +509,9 @@ func (t *rttTracker) Update(server string, d time.Duration) {
 	t.dirty.Store(true)
 }
 
-func (t *rttTracker) Timeout(server string) {
+func (t *rttTracker) Timeout(ctx context.Context, server string) {
+	defer t.tracers.timeout.Trace()()
+
 	t.mu.Lock()
 	if len(t.timeouts) > maxRTTTrackerEntries {
 		for k := range t.timeouts {
@@ -571,7 +536,9 @@ func (t *rttTracker) Timeout(server string) {
 	t.mu.Unlock()
 }
 
-func (t *rttTracker) Get(server string) time.Duration {
+func (t *rttTracker) Get(ctx context.Context, server string) time.Duration {
+	defer t.tracers.get.Trace()()
+
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	d, ok := t.rtts[server]
@@ -581,9 +548,9 @@ func (t *rttTracker) Get(server string) time.Duration {
 	return d
 }
 
-// SortBest selects the best n servers from the provided list.
-// Uses linear scan - cache friendly for small n (typical DNS selection of 2-3 servers).
-func (t *rttTracker) SortBest(servers []string, n int) []string {
+func (t *rttTracker) SortBest(ctx context.Context, servers []string, n int) []string {
+	defer t.tracers.sortBest.Trace()()
+
 	if len(servers) <= 1 {
 		return servers
 	}
@@ -613,7 +580,6 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 		rtt  time.Duration
 	}
 
-	// Linear scan: maintain slice of best n servers in unsorted order
 	best := make([]serverRTT, 0, n)
 	var maxIdx int
 	var maxRTT time.Duration
@@ -631,9 +597,7 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 				maxIdx = len(best) - 1
 			}
 		} else if rtt < maxRTT {
-			// Replace the worst with this one
 			best[maxIdx] = serverRTT{name: srv, rtt: rtt}
-			// Find new max
 			maxRTT = best[0].rtt
 			maxIdx = 0
 			for i := 1; i < len(best); i++ {
@@ -645,7 +609,6 @@ func (t *rttTracker) SortBest(servers []string, n int) []string {
 		}
 	}
 
-	// Sort the result by RTT (lowest first)
 	for i := 0; i < len(best)-1; i++ {
 		for j := i + 1; j < len(best); j++ {
 			if best[j].rtt < best[i].rtt {
