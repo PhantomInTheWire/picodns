@@ -135,3 +135,33 @@ func EncodeName(buf []byte, off int, name string) (int, error) {
 	buf[i] = 0
 	return i + 1, nil
 }
+
+// SkipName returns the offset immediately after a domain name in wire format.
+// Unlike DecodeName, it does not allocate or follow compression pointers; it
+// only advances past the encoded name bytes.
+func SkipName(buf []byte, off int) (int, error) {
+	i := off
+	for {
+		if i >= len(buf) {
+			return 0, ErrShortBuffer
+		}
+		length := int(buf[i])
+		if length == 0 {
+			return i + 1, nil
+		}
+		if length&CompressionMask == CompressionFlag {
+			if i+1 >= len(buf) {
+				return 0, ErrShortBuffer
+			}
+			return i + 2, nil
+		}
+		if length > maxLabelLen {
+			return 0, ErrLabelTooLong
+		}
+		i++
+		if i+length > len(buf) {
+			return 0, ErrShortBuffer
+		}
+		i += length
+	}
+}
