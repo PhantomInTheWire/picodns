@@ -125,25 +125,17 @@ type resolutionStats struct {
 func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	defer r.tracers.resolve.Trace()()
 
-	reqMsg, err := dns.ReadMessagePooled(req)
-	if err != nil || len(reqMsg.Questions) == 0 {
+	hdr, err := dns.ReadHeader(req)
+	if err != nil || hdr.QDCount == 0 {
 		return nil, nil, errors.New("recursive resolver: invalid request")
 	}
-	q := reqMsg.Questions[0]
-	name := q.Name
-	reqHeader := reqMsg.Header
-	// For single-question queries (the vast majority), use slice directly
-	var questions []dns.Question
-	if len(reqMsg.Questions) == 1 {
-		questions = reqMsg.Questions
-	} else {
-		questions = make([]dns.Question, len(reqMsg.Questions))
-		copy(questions, reqMsg.Questions)
+	q, _, qErr := dns.ReadQuestion(req, dns.HeaderLen)
+	if qErr != nil {
+		return nil, nil, errors.New("recursive resolver: invalid request")
 	}
-	reqMsg.Release()
 
 	stats := &resolutionStats{}
-	return r.resolveIterative(ctx, reqHeader, questions, name, 0, nil, stats, false)
+	return r.resolveIterative(ctx, hdr, []dns.Question{q}, q.Name, 0, nil, stats, false)
 }
 
 // resolveIterative performs iterative DNS resolution starting from root servers.
