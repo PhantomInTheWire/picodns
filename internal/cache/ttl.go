@@ -9,9 +9,10 @@ import (
 // TTL is a generic cache with TTL-based expiration.
 // It provides simple Get/Set/Delete operations with automatic expiration.
 type TTL[K comparable, V any] struct {
-	mu    sync.RWMutex
-	items map[K]ttlEntry[V]
-	clock func() time.Time
+	mu     sync.RWMutex
+	items  map[K]ttlEntry[V]
+	clock  func() time.Time
+	MaxLen int
 
 	ObsEnabled bool
 	gets       atomic.Uint64
@@ -107,6 +108,15 @@ func (c *TTL[K, V]) Set(key K, value V, ttl time.Duration) {
 		value:   value,
 		expires: c.clock().Add(ttl),
 	}
+	if c.MaxLen > 0 && len(c.items) > c.MaxLen {
+		for k := range c.items {
+			if k == key {
+				continue
+			}
+			delete(c.items, k)
+			break
+		}
+	}
 }
 
 // Delete removes a key from the cache.
@@ -196,5 +206,14 @@ func (c *PermanentCache[K, V]) Set(key K, value V) {
 	c.items[key] = ttlEntry[V]{
 		value:   value,
 		expires: time.Time{}, // Zero time = never expires
+	}
+	if c.MaxLen > 0 && len(c.items) > c.MaxLen {
+		for k := range c.items {
+			if k == key {
+				continue
+			}
+			delete(c.items, k)
+			break
+		}
 	}
 }

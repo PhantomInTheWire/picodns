@@ -3,9 +3,9 @@ package cache
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	"picodns/internal/dns"
 )
 
@@ -19,15 +19,16 @@ type Cache struct {
 }
 
 type cacheShard struct {
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	max   int
-	items map[dns.Question]*list.Element
+	items map[uint64]*list.Element
 	lru   *list.List
 }
 
 type entry struct {
-	key     dns.Question
+	key     uint64
 	value   []byte
+	ttlOffs []uint16
 	expires time.Time
 	hits    uint64
 	origTTL time.Duration
@@ -60,7 +61,7 @@ func New(max int, clock Clock) *Cache {
 	for i := 0; i < numShards; i++ {
 		c.shards[i] = &cacheShard{
 			max:   shardMax,
-			items: make(map[dns.Question]*list.Element),
+			items: make(map[uint64]*list.Element),
 			lru:   list.New(),
 		}
 	}
@@ -68,69 +69,92 @@ func New(max int, clock Clock) *Cache {
 	return c
 }
 
-// Use xxhash for fast distribution.
-// We hash the normalized name, type, and class to ensure consistent sharding.
-// Combine with type and class using simple XOR/shift for speed
-func (c *Cache) getShard(key dns.Question) *cacheShard {
+func (c *Cache) getShard(key uint64) *cacheShard {
 	if len(c.shards) == 1 {
 		return c.shards[0]
 	}
+	return c.shards[key&c.shardMask]
+}
 
-	h := xxhash.Sum64String(key.Name)
-	h ^= uint64(key.Type) << 32
-	h ^= uint64(key.Class)
-
-	return c.shards[h&c.shardMask]
+func questionKey(q dns.Question) uint64 {
+	q = q.Normalize()
+	h := dns.HashNormalizedNameString(q.Name)
+	h ^= uint64(q.Type) << 32
+	h ^= uint64(q.Class)
+	return h
 }
 
 func (c *Cache) Get(key dns.Question) ([]byte, bool) {
-	val, _, _, _, ok := c.GetWithMetadata(key)
+	val, _, _, _, _, ok := c.GetWithMetadata(key)
 	return val, ok
 }
 
-func (c *Cache) GetWithMetadata(key dns.Question) (value []byte, expires time.Time, hits uint64, origTTL time.Duration, ok bool) {
-	key = key.Normalize()
+func (c *Cache) GetWithMetadata(key dns.Question) (value []byte, expires time.Time, hits uint64, origTTL time.Duration, ttlOffs []uint16, ok bool) {
+	k := questionKey(key)
+	return c.GetWithMetadataKey(k)
+}
+
+func (c *Cache) GetWithMetadataKey(key uint64) (value []byte, expires time.Time, hits uint64, origTTL time.Duration, ttlOffs []uint16, ok bool) {
 	shard := c.getShard(key)
 
-	shard.mu.Lock()
-	defer shard.mu.Unlock()
-
+	shard.mu.RLock()
 	elem, ok := shard.items[key]
 	if !ok {
-		return nil, time.Time{}, 0, 0, false
+		shard.mu.RUnlock()
+		return nil, time.Time{}, 0, 0, nil, false
 	}
 
 	item := elem.Value.(*entry)
 	if !item.expires.IsZero() && c.clock().After(item.expires) {
-		shard.removeElement(elem)
-		return nil, time.Time{}, 0, 0, false
+		shard.mu.RUnlock()
+		// Expired: upgrade to write lock to remove
+		shard.mu.Lock()
+		// Double-check after acquiring write lock
+		if elem2, ok2 := shard.items[key]; ok2 {
+			item2 := elem2.Value.(*entry)
+			if !item2.expires.IsZero() && c.clock().After(item2.expires) {
+				shard.removeElement(elem2)
+			}
+		}
+		shard.mu.Unlock()
+		return nil, time.Time{}, 0, 0, nil, false
 	}
 
-	item.hits++
-	shard.lru.MoveToFront(elem)
-	return item.value, item.expires, item.hits, item.origTTL, true
+	// Update hit count atomically to avoid write lock contention.
+	// LRU is updated only on write to keep reads lock-free.
+	atomic.AddUint64(&item.hits, 1)
+	shard.mu.RUnlock()
+	return item.value, item.expires, atomic.LoadUint64(&item.hits), item.origTTL, item.ttlOffs, true
 }
 
 func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
 	if ttl <= 0 {
 		return false
 	}
-	key = key.Normalize()
+	k := questionKey(key)
+	return c.SetKey(k, value, ttl)
+}
+
+func (c *Cache) SetKey(key uint64, value []byte, ttl time.Duration) bool {
+	if ttl <= 0 {
+		return false
+	}
 	shard := c.getShard(key)
 
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
 
 	expires := c.clock().Add(ttl)
+	valCopy := append([]byte(nil), value...)
+	offs, _ := dns.CollectTTLOffsets(valCopy)
+
 	if elem, ok := shard.items[key]; ok {
 		item := elem.Value.(*entry)
-		// Reuse buffer if possible to reduce allocations
-		if cap(item.value) >= len(value) {
-			item.value = item.value[:len(value)]
-			copy(item.value, value)
-		} else {
-			item.value = append([]byte(nil), value...)
-		}
+		// Do not mutate the existing backing array in-place.
+		// GetWithMetadata returns item.value to callers after unlocking;
+		// in-place mutation here can race and corrupt readers.
+		item.value = valCopy
+		item.ttlOffs = offs
 		item.expires = expires
 		item.origTTL = ttl
 		shard.lru.MoveToFront(elem)
@@ -139,7 +163,8 @@ func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
 
 	elem := shard.lru.PushFront(&entry{
 		key:     key,
-		value:   append([]byte(nil), value...),
+		value:   valCopy,
+		ttlOffs: offs,
 		expires: expires,
 		origTTL: ttl,
 		hits:    1,
