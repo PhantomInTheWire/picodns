@@ -105,6 +105,23 @@ func (c *Cached) keyFromWire(req []byte) (dns.Header, uint64, bool) {
 	return hdr, key, true
 }
 
+func readQuestions(req []byte, qdCount uint16) ([]dns.Question, bool) {
+	if qdCount == 0 {
+		return nil, false
+	}
+	qs := make([]dns.Question, 0, qdCount)
+	off := dns.HeaderLen
+	for i := 0; i < int(qdCount); i++ {
+		q, next, err := dns.ReadQuestion(req, off)
+		if err != nil {
+			return nil, false
+		}
+		qs = append(qs, q)
+		off = next
+	}
+	return qs, true
+}
+
 func (c *Cached) ResolveFromCache(ctx context.Context, req []byte) ([]byte, func(), bool) {
 	defer c.tracers.resolveFromCache.Trace()()
 
@@ -157,12 +174,15 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		}
 	}
 
-	reqMsg, err := dns.ReadMessagePooled(req)
-	if err != nil || len(reqMsg.Questions) == 0 {
+	reqHeader, err := dns.ReadHeader(req)
+	if err != nil || reqHeader.QDCount == 0 {
 		return c.upstream.Resolve(ctx, req)
 	}
-	q := reqMsg.Questions[0]
-	reqHeader := reqMsg.Header
+	questions, ok := readQuestions(req, reqHeader.QDCount)
+	if !ok || len(questions) == 0 {
+		return c.upstream.Resolve(ctx, req)
+	}
+	q := questions[0]
 	key := c.cacheKeyFromQuestion(q)
 
 	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadataKey(key, reqHeader.ID)
@@ -183,13 +203,11 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 				"remaining", expires.Sub(c.clock()),
 				"duration", time.Since(start))
 		}
-		reqMsg.Release()
 		return cached, cleanup, nil
 	}
 
 	call, leader := c.acquireInflight(key)
 	if !leader {
-		reqMsg.Release()
 		select {
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()
@@ -222,25 +240,21 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 			c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start), "error", err)
 		}
 		call.err = err
-		reqMsg.Release()
 		return resp, cleanupResp, err
 	}
 
-	vErr := dns.ValidateResponseWithRequest(reqHeader, reqMsg.Questions, resp)
+	vErr := dns.ValidateResponseWithRequest(reqHeader, questions, resp)
 	if vErr != nil {
 		if vErr == dns.ErrIDMismatch || vErr == dns.ErrNotResponse {
 			call.err = vErr
-			reqMsg.Release()
 			return resp, cleanupResp, vErr
 		}
 		if debugEnabled {
 			c.logger.Debug("dns response validation mismatch; skip cache", "name", q.Name, "type", q.Type, "error", vErr)
 		}
 		call.err = nil
-		reqMsg.Release()
 		return resp, cleanupResp, nil
 	}
-	reqMsg.Release()
 
 	if respMsg, err := dns.ReadMessagePooled(resp); err == nil {
 		if ttl, ok := cacheTTLForResponse(resp, *respMsg, q); ok {
@@ -298,13 +312,11 @@ func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
 		ctx, cancel := context.WithTimeout(context.Background(), prefetchTimeout)
 		defer cancel()
 
-		qMsg, qErr := dns.ReadMessagePooled(reqCopy)
 		var q dns.Question
-		if qErr == nil && len(qMsg.Questions) > 0 {
-			q = qMsg.Questions[0]
-		}
-		if qErr == nil {
-			qMsg.Release()
+		if hdr, err := dns.ReadHeader(reqCopy); err == nil && hdr.QDCount > 0 {
+			if qs, ok := readQuestions(reqCopy, hdr.QDCount); ok && len(qs) > 0 {
+				q = qs[0]
+			}
 		}
 
 		resp, cleanup, err := c.upstream.Resolve(ctx, reqCopy)
