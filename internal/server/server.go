@@ -68,13 +68,7 @@ func (s *Server) Start(ctx context.Context) error {
 		writersWg.Wait()
 	}
 
-	for i := 0; i < s.cfg.Workers; i++ {
-		workersWg.Add(1)
-		go func() {
-			defer workersWg.Done()
-			s.worker(ctx)
-		}()
-	}
+	s.startWorkers(ctx, &workersWg)
 
 	udpSockets := s.cfg.UDPSockets
 	if udpSockets <= 0 {
