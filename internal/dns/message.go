@@ -29,16 +29,16 @@ var messagePool = sync.Pool{
 }
 
 const (
-	FlagQR     = 0x8000
-	FlagOpcode = 0x7800
-	FlagTC     = 0x0200
-	FlagRD     = 0x0100
-	FlagRA     = 0x0080
+	FlagQR     = 0x8000 // Bit 15: Query (0) or Response (1)
+	FlagOpcode = 0x7800 // Bits 11-14: Operation code (0=standard query)
+	FlagTC     = 0x0200 // Bit 9: Truncated
+	FlagRD     = 0x0100 // Bit 8: Recursion Desired
+	FlagRA     = 0x0080 // Bit 7: Recursion Available
 
-	RcodeSuccess  = 0
-	RcodeFormat   = 1
-	RcodeServer   = 2
-	RcodeNXDomain = 3
+	RcodeSuccess  = 0 // No error
+	RcodeFormat   = 1 // Format error - request malformed
+	RcodeServer   = 2 // Server failure
+	RcodeNXDomain = 3 // Non-existent domain
 
 	TypeA     uint16 = 1
 	TypeNS    uint16 = 2
@@ -274,6 +274,57 @@ func WriteQuestion(buf []byte, off int, q Question) (int, error) {
 	binary.BigEndian.PutUint16(buf[next:next+2], q.Type)
 	binary.BigEndian.PutUint16(buf[next+2:next+4], q.Class)
 	return next + 4, nil
+}
+
+func IsValidRequest(buf []byte) bool {
+	if len(buf) < HeaderLen {
+		return false
+	}
+
+	hdr, err := ReadHeader(buf)
+	if err != nil {
+		return false
+	}
+
+	if hdr.Flags&FlagQR != 0 {
+		return false
+	}
+
+	if hdr.QDCount != 1 {
+		return false
+	}
+
+	if hdr.ANCount != 0 || hdr.NSCount != 0 {
+		return false
+	}
+
+	// Opcode is bits 11-14; 0 means standard query
+	opcode := (hdr.Flags & FlagOpcode) >> 11
+	if opcode != 0 {
+		return false
+	}
+
+	off := HeaderLen
+	if len(buf) <= off {
+		return false
+	}
+
+	// Labels max at 63 bytes; compression pointers start with 0xC0
+	firstByte := buf[off]
+	if firstByte > maxLabelLen && firstByte != CompressionFlag {
+		return false
+	}
+
+	nameEnd, err := SkipName(buf, off)
+	if err != nil {
+		return false
+	}
+
+	if nameEnd+4 > len(buf) {
+		return false
+	}
+
+	return true
 }
 
 func ValidateResponse(req []byte, resp []byte) error {

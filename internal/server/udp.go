@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 
+	"picodns/internal/dns"
 	"picodns/internal/types"
 )
 
@@ -83,6 +84,36 @@ func (s *Server) udpReadLoop(ctx context.Context, writer *udpWriter, cacheResolv
 
 		s.TotalQueries.Add(1)
 		*bufPtr = b[:n]
+
+		if !dns.IsValidRequest(b[:n]) {
+			if hdr, err := dns.ReadHeader(b[:n]); err == nil {
+				var formerr [dns.HeaderLen]byte
+				formerr[0] = byte(hdr.ID >> 8)
+				formerr[1] = byte(hdr.ID)
+				// 0x80 = QR=1 (response), 0x81 = QR=1|RD=1
+				if hdr.Flags&dns.FlagRD != 0 {
+					formerr[2] = 0x81
+				} else {
+					formerr[2] = 0x80
+				}
+				// RCODE=1 (Format Error)
+				formerr[3] = 0x01
+				formerr[4] = 0x00
+				formerr[5] = 0x00
+				formerr[6] = 0x00
+				formerr[7] = 0x00
+				formerr[8] = 0x00
+				formerr[9] = 0x00
+				formerr[10] = 0x00
+				formerr[11] = 0x00
+				if _, err := writer.conn.WriteTo(formerr[:], addr); err != nil {
+					s.WriteErrors.Add(1)
+				}
+			}
+			s.bufPool.Put(bufPtr)
+			continue
+		}
+
 		// Cache-hit fast path: serve directly without queueing.
 		// Hard separation: hits never queue behind misses.
 		if cacheResolver != nil {

@@ -16,7 +16,7 @@ var builderPool = sync.Pool{
 
 const (
 	maxNameLen  = 255
-	maxLabelLen = 63
+	maxLabelLen = 63 // RFC 1035: max 63 bytes per label
 	maxDepth    = 16
 )
 
