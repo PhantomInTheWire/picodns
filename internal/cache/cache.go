@@ -77,8 +77,7 @@ func (c *Cache) getShard(key uint64) *cacheShard {
 }
 
 func questionKey(q dns.Question) uint64 {
-	q = q.Normalize()
-	h := dns.HashNormalizedNameString(q.Name)
+	h := dns.HashNameString(q.Name)
 	h ^= uint64(q.Type) << 32
 	h ^= uint64(q.Class)
 	return h
