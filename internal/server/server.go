@@ -9,19 +9,22 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"picodns/internal/config"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
 
 // queryJob represents a single DNS query to be processed
 type queryJob struct {
-	dataPtr *[]byte
-	n       int
-	addr    net.Addr
-	conn    net.PacketConn
+	dataPtr    *[]byte
+	n          int
+	addr       net.Addr
+	conn       net.PacketConn
+	enqueuedNs int64
 }
 
 type Server struct {
@@ -34,6 +37,13 @@ type Server struct {
 	DroppedPackets atomic.Uint64
 	HandlerErrors  atomic.Uint64
 	WriteErrors    atomic.Uint64
+	sample         atomic.Uint64
+
+	queueWait obs.DurationStat
+	resolve   obs.DurationStat
+	write     obs.DurationStat
+
+	cacheCounters func() (hits uint64, miss uint64)
 }
 
 func New(cfg config.Config, logger *slog.Logger, res types.Resolver) *Server {
@@ -49,6 +59,12 @@ func New(cfg config.Config, logger *slog.Logger, res types.Resolver) *Server {
 	}
 }
 
+// SetCacheCounters wires cache hit/miss counters into periodic stats logs.
+// It is safe to call before Start.
+func (s *Server) SetCacheCounters(fn func() (hits uint64, miss uint64)) {
+	s.cacheCounters = fn
+}
+
 func (s *Server) Start(ctx context.Context) error {
 	if len(s.cfg.ListenAddrs) == 0 {
 		return errors.New("no listen addresses configured")
@@ -59,6 +75,8 @@ func (s *Server) Start(ctx context.Context) error {
 
 	var workersWg sync.WaitGroup
 	var readersWg sync.WaitGroup
+	startTime := time.Now()
+	obsEnabled := s.cfg.Stats
 
 	shutdown := func() {
 		cancel()
@@ -107,9 +125,16 @@ func (s *Server) Start(ctx context.Context) error {
 				}
 
 				s.TotalQueries.Add(1)
+				var enqNs int64
+				if obsEnabled {
+					// Sample timings (1/256) to minimize overhead during benchmarks.
+					if (s.sample.Add(1) & 0xFF) == 0 {
+						enqNs = time.Now().UnixNano()
+					}
+				}
 
 				select {
-				case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, conn: c}:
+				case s.jobQueue <- queryJob{dataPtr: bufPtr, n: n, addr: addr, conn: c, enqueuedNs: enqNs}:
 				default:
 					s.bufPool.Put(bufPtr)
 					dropped := s.DroppedPackets.Add(1)
@@ -154,11 +179,68 @@ func (s *Server) Start(ctx context.Context) error {
 	<-ctx.Done()
 	s.logger.Info("shutting down")
 	shutdown()
+
+	if !obsEnabled {
+		s.logger.Info("server shutdown complete",
+			"total_queries", s.TotalQueries.Load(),
+			"dropped_packets", s.DroppedPackets.Load(),
+			"handler_errors", s.HandlerErrors.Load(),
+			"write_errors", s.WriteErrors.Load(),
+		)
+		return ctx.Err()
+	}
+
+	uptime := time.Since(startTime)
+	avgQPS := 0.0
+	total := s.TotalQueries.Load()
+	if uptime > 0 {
+		avgQPS = float64(total) / uptime.Seconds()
+	}
+	qs := s.queueWait.Snapshot()
+	rs := s.resolve.Snapshot()
+	ws := s.write.Snapshot()
+
+	bottleneck := "resolve"
+	bottleneckAvg := rs.Avg
+	if qs.Avg > bottleneckAvg {
+		bottleneck = "queue_wait"
+		bottleneckAvg = qs.Avg
+	}
+	if ws.Avg > bottleneckAvg {
+		bottleneck = "write"
+		bottleneckAvg = ws.Avg
+	}
+
+	hits, miss := uint64(0), uint64(0)
+	cacheHitRate := 0.0
+	if s.cacheCounters != nil {
+		hits, miss = s.cacheCounters()
+		if hits+miss > 0 {
+			cacheHitRate = float64(hits) / float64(hits+miss)
+		}
+	}
+
 	s.logger.Info("server shutdown complete",
-		"total_queries", s.TotalQueries.Load(),
+		"uptime", uptime,
+		"avg_qps", avgQPS,
+		"queue_len", len(s.jobQueue),
+		"queue_cap", cap(s.jobQueue),
+		"total_queries", total,
 		"dropped_packets", s.DroppedPackets.Load(),
 		"handler_errors", s.HandlerErrors.Load(),
-		"write_errors", s.WriteErrors.Load())
+		"write_errors", s.WriteErrors.Load(),
+		"queue_wait_avg", qs.Avg,
+		"queue_wait_max", qs.Max,
+		"resolve_avg", rs.Avg,
+		"resolve_max", rs.Max,
+		"write_avg", ws.Avg,
+		"write_max", ws.Max,
+		"bottleneck_stage", bottleneck,
+		"bottleneck_avg", bottleneckAvg,
+		"cache_hits", hits,
+		"cache_miss", miss,
+		"cache_hit_rate", cacheHitRate,
+	)
 	return ctx.Err()
 }
 
@@ -239,7 +321,18 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 
 func (s *Server) worker(ctx context.Context) {
 	for job := range s.jobQueue {
+		timed := job.enqueuedNs != 0
+		var resStart time.Time
+		if timed {
+			now := time.Now().UnixNano()
+			wait := time.Duration(now - job.enqueuedNs)
+			s.queueWait.Observe(wait)
+			resStart = time.Unix(0, now)
+		}
 		resp, cleanup, err := s.resolver.Resolve(ctx, (*job.dataPtr)[:job.n])
+		if timed {
+			s.resolve.Observe(time.Since(resStart))
+		}
 		if err != nil {
 			s.HandlerErrors.Add(1)
 			s.logger.Error("handler error", "error", err)
@@ -253,9 +346,16 @@ func (s *Server) worker(ctx context.Context) {
 			s.bufPool.Put(job.dataPtr)
 			continue
 		}
+		var wStart time.Time
+		if timed {
+			wStart = time.Now()
+		}
 		if _, writeErr := job.conn.WriteTo(resp, job.addr); writeErr != nil {
 			s.WriteErrors.Add(1)
 			s.logger.Error("write error", "error", writeErr)
+		}
+		if timed {
+			s.write.Observe(time.Since(wStart))
 		}
 		if cleanup != nil {
 			cleanup()

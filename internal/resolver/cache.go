@@ -11,6 +11,7 @@ import (
 
 	"picodns/internal/cache"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
@@ -21,12 +22,24 @@ type Cached struct {
 	upstream   types.Resolver
 	bufPool    *pool.Bytes
 	Prefetch   bool
+	ObsEnabled bool
 	refreshing sync.Map
 	clock      func() time.Time
 	logger     *slog.Logger
 	CacheHits  atomic.Uint64
 	CacheMiss  atomic.Uint64
+	sample     atomic.Uint64
+
+	parseReq   obs.DurationStat
+	cacheGet   obs.DurationStat
+	cacheCopy  obs.DurationStat
+	upstreamDo obs.DurationStat
+	validate   obs.DurationStat
+	cacheSet   obs.DurationStat
+	total      obs.DurationStat
 }
+
+const durationSampleMask = 0xFF // 1/256 samples
 
 func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 	return &Cached{
@@ -38,14 +51,54 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 	}
 }
 
+type CachedStatsSnapshot struct {
+	Hits uint64
+	Miss uint64
+
+	ParseReq  obs.DurationSnapshot
+	CacheGet  obs.DurationSnapshot
+	CacheCopy obs.DurationSnapshot
+	Upstream  obs.DurationSnapshot
+	Validate  obs.DurationSnapshot
+	CacheSet  obs.DurationSnapshot
+	Total     obs.DurationSnapshot
+}
+
+func (c *Cached) StatsSnapshot() CachedStatsSnapshot {
+	return CachedStatsSnapshot{
+		Hits:      c.CacheHits.Load(),
+		Miss:      c.CacheMiss.Load(),
+		ParseReq:  c.parseReq.Snapshot(),
+		CacheGet:  c.cacheGet.Snapshot(),
+		CacheCopy: c.cacheCopy.Snapshot(),
+		Upstream:  c.upstreamDo.Snapshot(),
+		Validate:  c.validate.Snapshot(),
+		CacheSet:  c.cacheSet.Snapshot(),
+		Total:     c.total.Snapshot(),
+	}
+}
+
 func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	var start time.Time
 	debugEnabled := c.logger != nil && c.logger.Enabled(ctx, slog.LevelDebug)
 	if debugEnabled {
 		start = time.Now()
 	}
+	sample := c.ObsEnabled && (c.sample.Add(1)&durationSampleMask) == 0
+	var totalStart time.Time
+	var parseStart time.Time
+	if sample {
+		totalStart = time.Now()
+		parseStart = totalStart
+	}
 	reqMsg, err := dns.ReadMessagePooled(req)
+	if sample {
+		c.parseReq.Observe(time.Since(parseStart))
+	}
 	if err != nil || len(reqMsg.Questions) == 0 {
+		if sample {
+			c.total.Observe(time.Since(totalStart))
+		}
 		return c.upstream.Resolve(ctx, req)
 	}
 	q := reqMsg.Questions[0]
@@ -54,8 +107,11 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	questions := make([]dns.Question, len(reqMsg.Questions))
 	copy(questions, reqMsg.Questions)
 
-	if cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID); ok {
-		c.CacheHits.Add(1)
+	cached, cleanup, expires, hits, origTTL, ok := c.getCachedWithMetadata(q, reqHeader.ID, sample)
+	if ok {
+		if c.ObsEnabled {
+			c.CacheHits.Add(1)
+		}
 		if c.Prefetch && hits > prefetchThreshold {
 			remaining := expires.Sub(c.clock())
 			if remaining < origTTL/prefetchRemainingRatio {
@@ -70,24 +126,56 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 				"duration", time.Since(start))
 		}
 		reqMsg.Release()
+		if sample {
+			c.total.Observe(time.Since(totalStart))
+		}
 		return cached, cleanup, nil
 	}
 	reqMsg.Release()
-	c.CacheMiss.Add(1)
-
+	if c.ObsEnabled {
+		c.CacheMiss.Add(1)
+	}
+	var upStart time.Time
+	if sample {
+		upStart = time.Now()
+	}
 	resp, cleanup, err := c.upstream.Resolve(ctx, req)
+	if sample {
+		c.upstreamDo.Observe(time.Since(upStart))
+	}
+
+	var validateStart time.Time
+	if sample {
+		validateStart = time.Now()
+	}
 	if err != nil || dns.ValidateResponseWithRequest(reqHeader, questions, resp) != nil {
+		if sample {
+			c.validate.Observe(time.Since(validateStart))
+		}
 		if debugEnabled {
 			c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start), "error", err)
 		}
+		if sample {
+			c.total.Observe(time.Since(totalStart))
+		}
 		return resp, cleanup, err
 	}
+	if sample {
+		c.validate.Observe(time.Since(validateStart))
+	}
 
+	var setStart time.Time
+	if sample {
+		setStart = time.Now()
+	}
 	if respMsg, err := dns.ReadMessagePooled(resp); err == nil {
 		if ttl, ok := extractTTL(*respMsg, q); ok {
 			c.setCache(q, resp, ttl)
 		}
 		respMsg.Release()
+	}
+	if sample {
+		c.cacheSet.Observe(time.Since(setStart))
 	}
 
 	setRAFlag(resp)
@@ -95,7 +183,9 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	if debugEnabled {
 		c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start))
 	}
-
+	if sample {
+		c.total.Observe(time.Since(totalStart))
+	}
 	return resp, cleanup, nil
 }
 
@@ -129,14 +219,24 @@ func (c *Cached) maybePrefetch(q dns.Question, req []byte) {
 }
 
 // getCachedWithMetadata retrieves a cached response and metadata
-func (c *Cached) getCachedWithMetadata(q dns.Question, queryID uint16) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
+func (c *Cached) getCachedWithMetadata(q dns.Question, queryID uint16, sample bool) ([]byte, func(), time.Time, uint64, time.Duration, bool) {
 	if c.cache == nil {
 		return nil, nil, time.Time{}, 0, 0, false
 	}
-
+	var getStart time.Time
+	if sample {
+		getStart = time.Now()
+	}
 	cachedData, expires, hits, origTTL, ok := c.cache.GetWithMetadata(q)
+	if sample {
+		c.cacheGet.Observe(time.Since(getStart))
+	}
 	if !ok || len(cachedData) < 4 {
 		return nil, nil, time.Time{}, 0, 0, false
+	}
+	var copyStart time.Time
+	if sample {
+		copyStart = time.Now()
 	}
 
 	bufPtr := c.bufPool.Get()
@@ -152,6 +252,9 @@ func (c *Cached) getCachedWithMetadata(q dns.Question, queryID uint16) ([]byte, 
 
 	binary.BigEndian.PutUint16(resp[0:2], queryID)
 	setRAFlag(resp)
+	if sample {
+		c.cacheCopy.Observe(time.Since(copyStart))
+	}
 
 	cleanup := func() {
 		if fromPool {
