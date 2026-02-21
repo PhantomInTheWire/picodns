@@ -202,12 +202,12 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 
 		resultChan := make(chan queryResult, len(servers))
 		queryCtx, cancelQueries := context.WithCancel(ctx)
-		var wg sync.WaitGroup
 
 		for i, server := range servers {
-			wg.Add(1)
 			go func(srv string, idx int) {
-				defer wg.Done()
+				res := queryResult{server: srv}
+				defer func() { resultChan <- res }()
+
 				if idx > 0 {
 					stagger := r.rttTracker.Get(queryCtx, servers[idx-1]) * rttMultiplier / 10
 					if stagger < minStaggerDelay {
@@ -217,6 +217,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 						stagger = maxStaggerDelay
 					}
 					if !sleepOrDone(queryCtx, stagger) {
+						res.err = queryCtx.Err()
 						return
 					}
 				}
@@ -230,7 +231,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				n, err := dns.BuildQueryIntoWithEDNS(buf, outID, name, q.Type, q.Class, ednsUDPSize)
 				if err != nil {
 					r.bufPool.Put(bufPtr)
-					resultChan <- queryResult{err: err}
+					res.err = err
 					return
 				}
 				query := buf[:n]
@@ -249,7 +250,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					defer func() { <-r.querySem }()
 				case <-queryCtx.Done():
 					r.bufPool.Put(bufPtr)
-					resultChan <- queryResult{err: queryCtx.Err()}
+					res.err = queryCtx.Err()
 					return
 				}
 
@@ -270,24 +271,22 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 						if cleanup != nil {
 							cleanup()
 						}
-						resultChan <- queryResult{err: vErr}
+						res.err = vErr
 						return
 					}
 					setResponseID(resp, clientID)
 				}
-				resultChan <- queryResult{resp: resp, cleanup: cleanup, err: err, server: srv}
+				res.resp = resp
+				res.cleanup = cleanup
+				res.err = err
 			}(server, i)
 		}
-
-		go func() {
-			wg.Wait()
-			close(resultChan)
-		}()
 
 		var resp []byte
 		var cleanup func()
 		var respServer string
-		for res := range resultChan {
+		for i := 0; i < len(servers); i++ {
+			res := <-resultChan
 			if res.err == nil {
 				if resp == nil {
 					resp = res.resp
@@ -298,15 +297,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					}
 					// We have a winner; cancel outstanding queries for this hop.
 					cancelQueries()
-					// Drain remaining results to ensure cleanups run.
-					go func(ch <-chan queryResult) {
-						for r := range ch {
-							if r.cleanup != nil {
-								r.cleanup()
-							}
-						}
-					}(resultChan)
-					break
+					continue
 				}
 				if res.cleanup != nil {
 					res.cleanup()
