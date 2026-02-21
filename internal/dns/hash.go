@@ -14,9 +14,17 @@ func fnv64Add(h uint64, b byte) uint64 {
 	return h
 }
 
-// HashNormalizedNameString hashes a normalized DNS name (lowercase, no trailing dot).
+// HashNameString hashes a DNS name and is tolerant of minor normalization
+// differences (ASCII case, trailing dot, and "." root).
+//
 // It uses '.' as the label separator.
-func HashNormalizedNameString(name string) uint64 {
+func HashNameString(name string) uint64 {
+	if name == "." {
+		name = ""
+	}
+	if len(name) > 0 && name[len(name)-1] == '.' {
+		name = name[:len(name)-1]
+	}
 	h := uint64(fvn64Offset)
 	for i := 0; i < len(name); i++ {
 		c := name[i]

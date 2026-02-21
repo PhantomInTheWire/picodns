@@ -339,8 +339,7 @@ func (c *Cached) maybePrefetchKey(key uint64, req []byte) {
 func (c *Cached) cacheKeyFromQuestion(q dns.Question) uint64 {
 	defer c.tracers.cacheKeyFromQ.Trace()()
 
-	q = q.Normalize()
-	h := dns.HashNormalizedNameString(q.Name)
+	h := dns.HashNameString(q.Name)
 	h ^= uint64(q.Type) << 32
 	h ^= uint64(q.Class)
 	return h
