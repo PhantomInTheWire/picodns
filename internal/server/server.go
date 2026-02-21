@@ -2,9 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
-	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -322,93 +320,6 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	return ctx.Err()
-}
-
-func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
-	defer func() { _ = conn.Close() }()
-
-	go func() {
-		<-ctx.Done()
-		_ = conn.Close()
-	}()
-
-	var lenBuf [2]byte
-	for {
-		if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
-			return
-		}
-		msgLen := int(binary.BigEndian.Uint16(lenBuf[:]))
-		if msgLen <= 0 || msgLen > dns.MaxMessageSize {
-			s.logger.Warn("invalid tcp message size", "size", msgLen)
-			return
-		}
-
-		bufPtr := s.bufPool.Get()
-		buf := (*bufPtr)[:msgLen]
-		if _, err := io.ReadFull(conn, buf); err != nil {
-			s.bufPool.Put(bufPtr)
-			return
-		}
-
-		resp, cleanup, err := s.resolver.Resolve(ctx, buf)
-		if err != nil {
-			s.HandlerErrors.Add(1)
-			s.logger.Error("handler error", "error", err)
-			if cleanup != nil {
-				cleanup()
-			}
-			// Best-effort SERVFAIL response.
-			if sf, ok := servfailFromRequestInPlace(buf); ok {
-				binary.BigEndian.PutUint16(lenBuf[:], uint16(len(sf)))
-				if _, werr := conn.Write(lenBuf[:]); werr == nil {
-					_, _ = conn.Write(sf)
-				}
-			}
-			s.bufPool.Put(bufPtr)
-			return
-		}
-		if len(resp) == 0 {
-			if cleanup != nil {
-				cleanup()
-			}
-			s.bufPool.Put(bufPtr)
-			continue
-		}
-		if len(resp) > int(^uint16(0)) {
-			s.HandlerErrors.Add(1)
-			s.logger.Error("response too large", "size", len(resp))
-			if cleanup != nil {
-				cleanup()
-			}
-			s.bufPool.Put(bufPtr)
-			return
-		}
-
-		binary.BigEndian.PutUint16(lenBuf[:], uint16(len(resp)))
-		if _, err := conn.Write(lenBuf[:]); err != nil {
-			s.WriteErrors.Add(1)
-			s.logger.Error("write error", "error", err)
-			if cleanup != nil {
-				cleanup()
-			}
-			s.bufPool.Put(bufPtr)
-			return
-		}
-		if _, err := conn.Write(resp); err != nil {
-			s.WriteErrors.Add(1)
-			s.logger.Error("write error", "error", err)
-			if cleanup != nil {
-				cleanup()
-			}
-			s.bufPool.Put(bufPtr)
-			return
-		}
-
-		if cleanup != nil {
-			cleanup()
-		}
-		s.bufPool.Put(bufPtr)
-	}
 }
 
 func (s *Server) worker(ctx context.Context) {
