@@ -61,37 +61,137 @@ func cleanupBoth(msg *dns.Message, cleanup func()) {
 	}
 }
 
-// extractTTL extracts the TTL from a DNS message for the given question.
-// For NXDOMAIN responses, extracts the SOA minimum TTL.
-func extractTTL(msg dns.Message, q dns.Question) (time.Duration, bool) {
-	if (msg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
-		for _, rr := range msg.Authorities {
-			if rr.Type == dns.TypeSOA && len(rr.Data) >= 22 {
-				_, nextM, err := dns.DecodeName(rr.Data, 0)
-				if err != nil {
-					continue
-				}
-				_, nextR, err := dns.DecodeName(rr.Data, nextM)
-				if err != nil {
-					continue
-				}
-				if len(rr.Data) >= nextR+20 {
-					return time.Duration(binary.BigEndian.Uint32(rr.Data[nextR+16:nextR+20])) * time.Second, true
-				}
+// cacheTTLForResponse returns a conservative TTL to use when caching a response.
+// It supports:
+// - Positive answers with optional CNAME chains (minimum TTL across chain + final RRset).
+// - NXDOMAIN and NOERROR/NODATA negative caching using SOA.MINIMUM (RFC2308-ish).
+// It returns (ttl, true) when cacheable.
+func cacheTTLForResponse(fullResp []byte, msg dns.Message, q dns.Question) (time.Duration, bool) {
+	rcode := msg.Header.Flags & 0x000F
+	q = q.Normalize()
+
+	soaTTL, hasSOA := negativeTTLFromSOA(fullResp, msg.Authorities)
+
+	if rcode == dns.RcodeNXDomain {
+		if hasSOA && soaTTL > 0 {
+			return soaTTL, true
+		}
+		return 0, false
+	}
+	if rcode != dns.RcodeSuccess {
+		return 0, false
+	}
+
+	minTTL := uint32(0)
+	setMin := func(v uint32) {
+		if v == 0 {
+			return
+		}
+		if minTTL == 0 || v < minTTL {
+			minTTL = v
+		}
+	}
+
+	// Follow CNAME chain (if any) starting from the query name.
+	current := q.Name
+	seen := make(map[string]struct{}, 4)
+	seen[current] = struct{}{}
+	for i := 0; i < 16; i++ {
+		var next string
+		var ttl uint32
+		found := false
+		for _, rr := range msg.Answers {
+			if rr.Type != dns.TypeCNAME || rr.Class != q.Class {
+				continue
 			}
+			if rr.Name != current {
+				continue
+			}
+			target := dns.ExtractNameFromData(fullResp, rr.DataOffset)
+			if target == "" {
+				continue
+			}
+			next = target
+			ttl = rr.TTL
+			found = true
+			break
+		}
+		if !found {
+			break
+		}
+		setMin(ttl)
+		if _, ok := seen[next]; ok {
+			break
+		}
+		seen[next] = struct{}{}
+		current = next
+	}
+
+	finalName := current
+
+	// Find final RRset matching query type.
+	foundFinal := false
+	for _, rr := range msg.Answers {
+		if rr.Class != q.Class {
+			continue
+		}
+		if rr.Name != finalName {
+			continue
+		}
+		if rr.Type == q.Type {
+			setMin(rr.TTL)
+			foundFinal = true
+		}
+	}
+
+	if foundFinal {
+		if minTTL > 0 {
+			return time.Duration(minTTL) * time.Second, true
 		}
 		return 0, false
 	}
 
-	q = q.Normalize()
-	for _, rr := range msg.Answers {
-		if rr.Type == q.Type && rr.Class == q.Class && rr.TTL > 0 {
-			if dns.NormalizeName(rr.Name) == q.Name {
-				return time.Duration(rr.TTL) * time.Second, true
-			}
+	// If we only got a CNAME chain (no final RRset), cache the response using the chain TTL.
+	if minTTL > 0 {
+		return time.Duration(minTTL) * time.Second, true
+	}
+
+	// NOERROR/NODATA: cache using SOA MINIMUM when present.
+	if hasSOA && soaTTL > 0 {
+		return soaTTL, true
+	}
+	return 0, false
+}
+
+func negativeTTLFromSOA(fullResp []byte, authorities []dns.ResourceRecord) (time.Duration, bool) {
+	for _, rr := range authorities {
+		if rr.Type != dns.TypeSOA || rr.DataOffset <= 0 {
+			continue
+		}
+		min, ok := soaMinimumTTL(fullResp, rr.DataOffset)
+		if ok && min > 0 {
+			return time.Duration(min) * time.Second, true
 		}
 	}
 	return 0, false
+}
+
+func soaMinimumTTL(fullResp []byte, dataOffset int) (uint32, bool) {
+	if dataOffset < 0 || dataOffset >= len(fullResp) {
+		return 0, false
+	}
+	_, offM, err := dns.DecodeName(fullResp, dataOffset)
+	if err != nil {
+		return 0, false
+	}
+	_, offR, err := dns.DecodeName(fullResp, offM)
+	if err != nil {
+		return 0, false
+	}
+	if offR+20 > len(fullResp) {
+		return 0, false
+	}
+	return binary.BigEndian.Uint32(fullResp[offR+16 : offR+20]), true
 }
 
 // setRAFlag sets the Recursion Available (RA) flag in a DNS response header.
