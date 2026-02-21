@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DURATION="${DURATION:-10}"
 QPS="${QPS:-20000}"
 PORT="${PORT:-1053}"
+UDP_SOCKETS="${UDP_SOCKETS:-4}"
 QUERY_FILE="${QUERY_FILE:-${ROOT_DIR}/queries.txt}"
 KNOT_PORT="${KNOT_PORT:-1054}"
 KNOT_WORKERS="${KNOT_WORKERS:-1}"
@@ -47,7 +48,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-./bin/dnsd -recursive -listen ":${PORT}" -stats > /tmp/picodns.log 2>&1 &
+./bin/dnsd -recursive -listen "127.0.0.1:${PORT}" -udp-sockets "${UDP_SOCKETS}" -stats > /tmp/picodns.log 2>&1 &
 DNSD_PID=$!
 sleep "${START_DELAY}"
 
