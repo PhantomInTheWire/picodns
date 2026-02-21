@@ -19,19 +19,14 @@ const sampleMask = 0xFF
 
 // FuncTracer tracks performance metrics for a single function.
 type FuncTracer struct {
-	name   string
-	parent *FuncTracer // immediate caller (for call graph)
-	depth  int         // depth in call stack (0 = root)
+	name  string
+	depth int // depth in call stack (0 = root)
 
 	// Metrics (all atomic)
 	calls   atomic.Uint64
 	sampled atomic.Uint64 // number of sampled calls
 	totalNs atomic.Uint64
 	maxNs   atomic.Uint64
-
-	// Children (functions called by this one)
-	childrenMu sync.RWMutex
-	children   map[string]*FuncTracer
 }
 
 // NewFuncTracer creates a new function tracer.
@@ -42,10 +37,8 @@ func NewFuncTracer(name string, parent *FuncTracer) *FuncTracer {
 		depth = parent.depth + 1
 	}
 	return &FuncTracer{
-		name:     name,
-		parent:   parent,
-		depth:    depth,
-		children: make(map[string]*FuncTracer),
+		name:  name,
+		depth: depth,
 	}
 }
 
@@ -84,24 +77,8 @@ func (t *FuncTracer) Trace() func() {
 	}
 }
 
-// addChild registers a child tracer.
-func (t *FuncTracer) addChild(child *FuncTracer) {
-	t.childrenMu.Lock()
-	if _, ok := t.children[child.name]; !ok {
-		t.children[child.name] = child
-	}
-	t.childrenMu.Unlock()
-}
-
 // Snapshot returns a point-in-time snapshot of the tracer.
 func (t *FuncTracer) Snapshot() TracerSnapshot {
-	t.childrenMu.RLock()
-	childNames := make([]string, 0, len(t.children))
-	for name := range t.children {
-		childNames = append(childNames, name)
-	}
-	t.childrenMu.RUnlock()
-
 	c := t.calls.Load()
 	s := t.sampled.Load()
 	total := time.Duration(t.totalNs.Load())
@@ -119,7 +96,7 @@ func (t *FuncTracer) Snapshot() TracerSnapshot {
 		Avg:        avg,
 		Max:        time.Duration(t.maxNs.Load()),
 		Depth:      t.depth,
-		ChildNames: childNames,
+		ChildNames: nil,
 	}
 }
 
