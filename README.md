@@ -9,10 +9,10 @@ make run # regular mode
 make run-recursive # recursive mode
 
 # manual
-./bin/dnsd -listen :1053 -upstreams 1.1.1.1:53,8.8.8.8:53
+./bin/picodns -listen :1053 -upstreams 1.1.1.1:53,8.8.8.8:53
 
 # see all flags
-./bin/dnsd -h
+./bin/picodns -h
 ```
 
 ## Capabilities
