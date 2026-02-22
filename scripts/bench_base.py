@@ -268,6 +268,11 @@ class BenchmarkRunnerBase:
         if not functions:
             return
 
+        # Sort by depth ascending, then by total time descending
+        functions = sorted(
+            functions, key=lambda f: (f.get("depth", 0), -f.get("total_ns", 0))
+        )
+
         table = Table(
             box=box.ROUNDED, show_header=True, header_style="bold", expand=True
         )
