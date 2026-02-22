@@ -375,7 +375,7 @@ class BenchmarkRunnerBase:
             p_qps = self.pico_result.get("qps", 0)
             k_qps = self.knot_result.get("qps", 0)
 
-            if k_qps > 0:
+            if k_qps > 0 and p_qps > 0:
                 ratio = p_qps / k_qps
                 if ratio > 1:
                     console.print(
