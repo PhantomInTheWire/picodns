@@ -32,6 +32,22 @@ type udpTransport struct {
 	}
 }
 
+// Use the caller-provided deadline (e.g. recursive resolver per-hop timeout)
+// rather than capping it to the transport default.
+func timeoutFromContextOrDefault(ctx context.Context, fallback time.Duration) time.Duration {
+	if ctx == nil {
+		return fallback
+	}
+	if d, ok := ctx.Deadline(); ok {
+		until := time.Until(d)
+		if until < 0 {
+			return 0
+		}
+		return until
+	}
+	return fallback
+}
+
 func (t *udpTransport) SetObsEnabled(enabled bool) {
 	if t == nil || t.addrCache == nil || t.addrCache.TTL == nil {
 		return
@@ -66,6 +82,18 @@ func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration
 func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]byte, func(), error) {
 	defer t.tracers.query.Trace()()
 
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	timeout := timeoutFromContextOrDefault(ctx, t.timeout)
+	if timeout <= 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, context.DeadlineExceeded
+	}
+
 	raddr, ok := t.addrCache.Get(server)
 	if !ok {
 		var err error
@@ -76,7 +104,7 @@ func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]
 		t.addrCache.Set(server, raddr)
 	}
 
-	resp, release, needsTCP, err := t.queryUDP(ctx, raddr, req, t.timeout, t.bufPool, t.connPool, false)
+	resp, release, needsTCP, err := t.queryUDP(ctx, raddr, req, timeout, t.bufPool, t.connPool, false)
 	if err != nil {
 		if ne, ok := err.(net.Error); ok && ne.Timeout() {
 			slog.Debug("dns udp query timeout", "server", server)
@@ -87,7 +115,7 @@ func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]
 	if needsTCP {
 		slog.Debug("dns udp truncated, fallback to tcp", "server", server)
 		release()
-		resp, err := t.tcpQueryWithValidation(ctx, server, req, t.timeout, false)
+		resp, err := t.tcpQueryWithValidation(ctx, server, req, timeout, false)
 		return resp, nil, err
 	}
 
@@ -106,7 +134,7 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 	defer t.tracers.queryUDP.Trace()()
 
 	var conn *net.UDPConn
-	var connRelease func()
+	var connRelease func(bad bool)
 
 	if cp != nil {
 		conn, connRelease, err = cp.get(ctx)
@@ -120,9 +148,9 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 		}
 	}
 
-	rel := func() {
+	rel := func(bad bool) {
 		if cp != nil {
-			connRelease()
+			connRelease(bad)
 		} else {
 			_ = conn.Close()
 		}
@@ -133,12 +161,12 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 		deadline = d
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
-		rel()
+		rel(true)
 		return nil, nil, false, err
 	}
 
 	if _, err := conn.WriteTo(req, raddr); err != nil {
-		rel()
+		rel(true)
 		return nil, nil, false, err
 	}
 
@@ -146,18 +174,36 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 	buf := *bufPtr
 	buf = buf[:cap(buf)]
 
-	n, _, err := conn.ReadFrom(buf)
+	n, from, err := conn.ReadFrom(buf)
 	if err != nil {
 		bufPool.Put(bufPtr)
-		rel()
+		bad := true
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			// Close pooled UDP socket on timeout so late replies can't poison
+			// subsequent queries when the socket is reused.
+			bad = true
+		}
+		rel(bad)
 		return nil, nil, false, err
+	}
+	// If we got a datagram from a different address, don't risk reusing this socket.
+	// This should be extremely rare in normal operation.
+	bad := false
+	if fromAddr, ok := from.(*net.UDPAddr); ok {
+		if !fromAddr.IP.Equal(raddr.IP) || fromAddr.Port != raddr.Port {
+			bad = true
+		}
+	} else if from != nil {
+		if from.String() != raddr.String() {
+			bad = true
+		}
 	}
 
 	resp = buf[:n]
 
 	finalRelease := func() {
 		bufPool.Put(bufPtr)
-		rel()
+		rel(bad)
 	}
 
 	if validate {

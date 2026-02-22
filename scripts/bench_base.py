@@ -457,6 +457,10 @@ class BenchmarkRunnerBase:
             str(self.perf_report_path),
         ]
 
+        log_level = os.getenv("DNSD_LOG_LEVEL", "").strip()
+        if log_level:
+            cmd.extend(["-log-level", log_level])
+
         with open("/tmp/picodns.log", "w") as log:
             proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
             self.dnsd_pid = proc.pid

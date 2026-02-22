@@ -23,6 +23,7 @@ type Server struct {
 	DroppedPackets atomic.Uint64
 	HandlerErrors  atomic.Uint64
 	WriteErrors    atomic.Uint64
+	logServfail    bool
 
 	cacheCounters func() (hits uint64, miss uint64)
 }
@@ -31,13 +32,16 @@ func New(cfg config.Config, logger *slog.Logger, res types.Resolver) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{
+	s := &Server{
 		cfg:      cfg,
 		logger:   logger,
 		resolver: res,
 		bufPool:  pool.DefaultPool,
 		jobQueue: make(chan queryJob, cfg.Workers),
 	}
+	// Cache this once; slog's Enabled check is not free at very high QPS.
+	s.logServfail = logger.Enabled(context.Background(), slog.LevelDebug)
+	return s
 }
 
 // SetCacheCounters wires cache hit/miss counters into periodic stats logs.

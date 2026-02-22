@@ -9,6 +9,26 @@ import (
 	"picodns/internal/types"
 )
 
+func (s *Server) maybeLogServfail(resp []byte, addr net.Addr) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	if !s.logServfail {
+		return
+	}
+	if len(resp) < dns.HeaderLen {
+		return
+	}
+	hdr, err := dns.ReadHeader(resp)
+	if err != nil {
+		return
+	}
+	if (hdr.Flags & 0x000F) != dns.RcodeServer {
+		return
+	}
+	s.logger.Debug("sending SERVFAIL", "id", hdr.ID, "bytes", len(resp), "addr", addr.String())
+}
+
 // queryJob represents a single DNS query to be processed.
 type queryJob struct {
 	dataPtr *[]byte
@@ -34,6 +54,7 @@ func (s *Server) udpWriteLoop(writer *udpWriter) {
 	var writeErrCount uint64
 	flushItem := func(item udpWrite) {
 		if len(item.resp) > 0 {
+			s.maybeLogServfail(item.resp, item.addr)
 			if _, writeErr := writer.conn.WriteTo(item.resp, item.addr); writeErr != nil {
 				s.WriteErrors.Add(1)
 				writeErrCount++
@@ -120,6 +141,7 @@ func (s *Server) udpReadLoop(ctx context.Context, writer *udpWriter, cacheResolv
 			if resp, cleanup, ok := cacheResolver.ResolveFromCache(ctx, b[:n]); ok {
 				// Direct write from reader goroutine - fastest path.
 				// No channel, no queuing, no blocking.
+				s.maybeLogServfail(resp, addr)
 				if _, err := writer.conn.WriteTo(resp, addr); err != nil {
 					s.WriteErrors.Add(1)
 				}
