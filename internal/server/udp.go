@@ -54,7 +54,9 @@ func (s *Server) udpWriteLoop(writer *udpWriter) {
 	var writeErrCount uint64
 	flushItem := func(item udpWrite) {
 		if len(item.resp) > 0 {
-			s.maybeLogServfail(item.resp, item.addr)
+			if s.logServfail {
+				s.maybeLogServfail(item.resp, item.addr)
+			}
 			if _, writeErr := writer.conn.WriteTo(item.resp, item.addr); writeErr != nil {
 				s.WriteErrors.Add(1)
 				writeErrCount++
@@ -141,7 +143,9 @@ func (s *Server) udpReadLoop(ctx context.Context, writer *udpWriter, cacheResolv
 			if resp, cleanup, ok := cacheResolver.ResolveFromCache(ctx, b[:n]); ok {
 				// Direct write from reader goroutine - fastest path.
 				// No channel, no queuing, no blocking.
-				s.maybeLogServfail(resp, addr)
+				if s.logServfail {
+					s.maybeLogServfail(resp, addr)
+				}
 				if _, err := writer.conn.WriteTo(resp, addr); err != nil {
 					s.WriteErrors.Add(1)
 				}

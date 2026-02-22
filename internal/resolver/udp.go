@@ -32,18 +32,22 @@ type udpTransport struct {
 	}
 }
 
-// Use the caller-provided deadline (e.g. recursive resolver per-hop timeout)
-// rather than capping it to the transport default.
+// timeoutFromContextOrDefault returns an effective timeout for a single upstream
+// exchange. We cap to the transport's default timeout to avoid tying up resolver
+// workers for seconds on upstream timeouts (which tanks overall QPS under load).
 func timeoutFromContextOrDefault(ctx context.Context, fallback time.Duration) time.Duration {
 	if ctx == nil {
 		return fallback
 	}
 	if d, ok := ctx.Deadline(); ok {
 		until := time.Until(d)
-		if until < 0 {
+		if until <= 0 {
 			return 0
 		}
-		return until
+		if until < fallback {
+			return until
+		}
+		return fallback
 	}
 	return fallback
 }
