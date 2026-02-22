@@ -16,25 +16,27 @@ import (
 	"picodns/internal/types"
 )
 
-// udpTransport implements types.Transport using UDP with TCP fallback.
 type udpTransport struct {
 	bufPool   *pool.Bytes
 	connPool  *connPool
 	timeout   time.Duration
 	addrCache *cache.PermanentCache[string, *net.UDPAddr]
 
-	// Function tracers
 	tracers struct {
 		query       *obs.FuncTracer
 		queryUDP    *obs.FuncTracer
+		udpDeadline *obs.FuncTracer
+		udpWrite    *obs.FuncTracer
+		udpRead     *obs.FuncTracer
 		tcpQuery    *obs.FuncTracer
+		tcpDial     *obs.FuncTracer
+		tcpWrite    *obs.FuncTracer
+		tcpRead     *obs.FuncTracer
 		resolveAddr *obs.FuncTracer
 	}
 }
 
-// timeoutFromContextOrDefault returns an effective timeout for a single upstream
-// exchange. We cap to the transport's default timeout to avoid tying up resolver
-// workers for seconds on upstream timeouts (which tanks overall QPS under load).
+// timeoutFromContextOrDefault returns an effective timeout for a single upstream exchange.
 func timeoutFromContextOrDefault(ctx context.Context, fallback time.Duration) time.Duration {
 	if ctx == nil {
 		return fallback
@@ -68,29 +70,46 @@ func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration
 	}
 	t.addrCache.MaxLen = maxAddrCacheEntries
 
-	// Initialize tracers
 	t.tracers.query = obs.NewFuncTracer("udpTransport.Query", nil)
 	t.tracers.queryUDP = obs.NewFuncTracer("queryUDP", t.tracers.query)
+	t.tracers.udpDeadline = obs.NewFuncTracer("queryUDP.netDeadline", t.tracers.queryUDP)
+	t.tracers.udpWrite = obs.NewFuncTracer("queryUDP.netWrite", t.tracers.queryUDP)
+	t.tracers.udpRead = obs.NewFuncTracer("queryUDP.netRead", t.tracers.queryUDP)
 	t.tracers.tcpQuery = obs.NewFuncTracer("tcpQueryWithValidation", t.tracers.query)
+	t.tracers.tcpDial = obs.NewFuncTracer("tcpQueryWithValidation.netDial", t.tracers.tcpQuery)
+	t.tracers.tcpWrite = obs.NewFuncTracer("tcpQueryWithValidation.netWrite", t.tracers.tcpQuery)
+	t.tracers.tcpRead = obs.NewFuncTracer("tcpQueryWithValidation.netRead", t.tracers.tcpQuery)
 	t.tracers.resolveAddr = obs.NewFuncTracer("udpTransport.resolveAddr", t.tracers.query)
 
-	// Register tracers
 	obs.GlobalRegistry.Register(t.tracers.query)
 	obs.GlobalRegistry.Register(t.tracers.queryUDP)
+	obs.GlobalRegistry.Register(t.tracers.udpDeadline)
+	obs.GlobalRegistry.Register(t.tracers.udpWrite)
+	obs.GlobalRegistry.Register(t.tracers.udpRead)
 	obs.GlobalRegistry.Register(t.tracers.tcpQuery)
+	obs.GlobalRegistry.Register(t.tracers.tcpDial)
+	obs.GlobalRegistry.Register(t.tracers.tcpWrite)
+	obs.GlobalRegistry.Register(t.tracers.tcpRead)
 	obs.GlobalRegistry.Register(t.tracers.resolveAddr)
 
 	return t
 }
 
-func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]byte, func(), error) {
+func (t *udpTransport) Query(ctx context.Context, server string, req []byte, timeout time.Duration) ([]byte, func(), error) {
 	defer t.tracers.query.Trace()()
 
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
 
-	timeout := timeoutFromContextOrDefault(ctx, t.timeout)
+	if timeout <= 0 {
+		timeout = timeoutFromContextOrDefault(ctx, t.timeout)
+	} else if t.timeout > 0 && timeout > t.timeout {
+		// Cap caller-provided timeouts to transport default.
+		// This prevents recursive resolution from tying up workers for seconds
+		// when RTT is unknown or inflated.
+		timeout = t.timeout
+	}
 	if timeout <= 0 {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
@@ -128,14 +147,16 @@ func (t *udpTransport) Query(ctx context.Context, server string, req []byte) ([]
 
 func (t *udpTransport) resolveAddr(ctx context.Context, server string) (*net.UDPAddr, error) {
 	defer t.tracers.resolveAddr.Trace()()
-	return net.ResolveUDPAddr("udp", server)
+	return resolveUDPAddr(ctx, server)
 }
 
 // queryUDP performs a UDP DNS query. The caller must call release() when done with resp.
 // If cp is nil, a new connection is created for this query.
 // It returns a slice of a pooled buffer; the caller owns the buffer until release is called.
 func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []byte, timeout time.Duration, bufPool *pool.Bytes, cp *connPool, validate bool) (resp []byte, release func(), needsTCP bool, err error) {
-	defer t.tracers.queryUDP.Trace()()
+	sampled := t.tracers.queryUDP.ShouldSample()
+	doneQuery := t.tracers.queryUDP.TraceSampled(sampled)
+	defer doneQuery()
 
 	var conn *net.UDPConn
 	var connRelease func(bad bool)
@@ -164,12 +185,18 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	if err := conn.SetDeadline(deadline); err != nil {
+	doneDeadline := t.tracers.udpDeadline.TraceNested(sampled)
+	err = conn.SetDeadline(deadline)
+	doneDeadline()
+	if err != nil {
 		rel(true)
 		return nil, nil, false, err
 	}
 
-	if _, err := conn.WriteTo(req, raddr); err != nil {
+	doneWrite := t.tracers.udpWrite.TraceNested(sampled)
+	_, err = conn.WriteTo(req, raddr)
+	doneWrite()
+	if err != nil {
 		rel(true)
 		return nil, nil, false, err
 	}
@@ -178,7 +205,9 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 	buf := *bufPtr
 	buf = buf[:cap(buf)]
 
-	n, from, err := conn.ReadFrom(buf)
+	doneRead := t.tracers.udpRead.TraceNested(sampled)
+	n, fromAddr, err := conn.ReadFromUDP(buf)
+	doneRead()
 	if err != nil {
 		bufPool.Put(bufPtr)
 		bad := true
@@ -193,12 +222,8 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 	// If we got a datagram from a different address, don't risk reusing this socket.
 	// This should be extremely rare in normal operation.
 	bad := false
-	if fromAddr, ok := from.(*net.UDPAddr); ok {
+	if fromAddr != nil {
 		if !fromAddr.IP.Equal(raddr.IP) || fromAddr.Port != raddr.Port {
-			bad = true
-		}
-	} else if from != nil {
-		if from.String() != raddr.String() {
 			bad = true
 		}
 	}
@@ -228,10 +253,14 @@ func (t *udpTransport) queryUDP(ctx context.Context, raddr *net.UDPAddr, req []b
 // tcpQueryWithValidation performs a TCP DNS query to the given server.
 // If validate is true, it validates the response against the request.
 func (t *udpTransport) tcpQueryWithValidation(ctx context.Context, server string, req []byte, timeout time.Duration, validate bool) ([]byte, error) {
-	defer t.tracers.tcpQuery.Trace()()
+	sampled := t.tracers.tcpQuery.ShouldSample()
+	doneTCP := t.tracers.tcpQuery.TraceSampled(sampled)
+	defer doneTCP()
 
 	var d net.Dialer
+	doneDial := t.tracers.tcpDial.TraceNested(sampled)
 	conn, err := d.DialContext(ctx, "tcp", server)
+	doneDial()
 	if err != nil {
 		return nil, err
 	}
@@ -249,23 +278,32 @@ func (t *udpTransport) tcpQueryWithValidation(ctx context.Context, server string
 	var lenBuf [2]byte
 	binary.BigEndian.PutUint16(lenBuf[:], reqLen)
 
-	if _, err := conn.Write(lenBuf[:]); err != nil {
-		return nil, err
+	doneWrite := t.tracers.tcpWrite.TraceNested(sampled)
+	_, err = conn.Write(lenBuf[:])
+	if err == nil {
+		_, err = conn.Write(req)
 	}
-	if _, err := conn.Write(req); err != nil {
+	doneWrite()
+	if err != nil {
 		return nil, err
 	}
 
-	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+	doneRead := t.tracers.tcpRead.TraceNested(sampled)
+	_, err = io.ReadFull(conn, lenBuf[:])
+	if err != nil {
+		doneRead()
 		return nil, err
 	}
 	respLen := int(binary.BigEndian.Uint16(lenBuf[:]))
 	if respLen > dns.MaxMessageSize {
+		doneRead()
 		return nil, errors.New("tcp response too large")
 	}
 
 	resp := make([]byte, respLen)
-	if _, err := io.ReadFull(conn, resp); err != nil {
+	_, err = io.ReadFull(conn, resp)
+	doneRead()
+	if err != nil {
 		return nil, err
 	}
 

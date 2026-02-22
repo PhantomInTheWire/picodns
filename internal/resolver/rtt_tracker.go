@@ -8,9 +8,8 @@ import (
 	"picodns/internal/obs"
 )
 
-// rttTracker tracks nameserver response times.
 type rttTracker struct {
-	mu       sync.RWMutex
+	mu       sync.Mutex
 	rtts     map[string]time.Duration
 	timeouts map[string]uint32
 	cooldown map[string]time.Time
@@ -90,16 +89,16 @@ func (t *rttTracker) Failure(ctx context.Context, server string) {
 	t.mu.Unlock()
 }
 
-func (t *rttTracker) Get(ctx context.Context, server string) time.Duration {
+func (t *rttTracker) Get(ctx context.Context, server string) (time.Duration, bool) {
 	defer t.tracers.get.Trace()()
 
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	d, ok := t.rtts[server]
 	if !ok {
-		return unknownRTT
+		return unknownRTT, false
 	}
-	return d
+	return d, true
 }
 
 func (t *rttTracker) SortBest(ctx context.Context, servers []string, n int) []string {
@@ -116,66 +115,57 @@ func (t *rttTracker) SortBest(ctx context.Context, servers []string, n int) []st
 	}
 
 	now := time.Now()
-	var candidates []string
-
-	t.mu.RLock()
-	for _, srv := range servers {
-		if until, ok := t.cooldown[srv]; ok && until.After(now) {
-			continue
-		}
-		candidates = append(candidates, srv)
-	}
-	if len(candidates) == 0 {
-		candidates = servers
-	}
 
 	type serverRTT struct {
 		name string
 		rtt  time.Duration
 	}
 
-	best := make([]serverRTT, 0, n)
-	var maxIdx int
-	var maxRTT time.Duration
+	// Collect candidates under lock, then sort outside.
+	candidates := make([]serverRTT, 0, len(servers))
 
-	for _, srv := range candidates {
+	t.mu.Lock()
+	for _, srv := range servers {
+		if until, ok := t.cooldown[srv]; ok && until.After(now) {
+			continue
+		}
 		rtt, ok := t.rtts[srv]
 		if !ok {
 			rtt = unknownRTT
 		}
+		candidates = append(candidates, serverRTT{name: srv, rtt: rtt})
+	}
+	if len(candidates) == 0 {
+		for _, srv := range servers {
+			rtt, ok := t.rtts[srv]
+			if !ok {
+				rtt = unknownRTT
+			}
+			candidates = append(candidates, serverRTT{name: srv, rtt: rtt})
+		}
+	}
+	t.mu.Unlock()
 
-		if len(best) < n {
-			best = append(best, serverRTT{name: srv, rtt: rtt})
-			if rtt > maxRTT {
-				maxRTT = rtt
-				maxIdx = len(best) - 1
+	// Trivial bubble sort by RTT (ascending).
+	for i := 0; i < len(candidates); i++ {
+		swapped := false
+		for j := 0; j+1 < len(candidates)-i; j++ {
+			if candidates[j+1].rtt < candidates[j].rtt {
+				candidates[j], candidates[j+1] = candidates[j+1], candidates[j]
+				swapped = true
 			}
-		} else if rtt < maxRTT {
-			best[maxIdx] = serverRTT{name: srv, rtt: rtt}
-			maxRTT = best[0].rtt
-			maxIdx = 0
-			for i := 1; i < len(best); i++ {
-				if best[i].rtt > maxRTT {
-					maxRTT = best[i].rtt
-					maxIdx = i
-				}
-			}
+		}
+		if !swapped {
+			break
 		}
 	}
 
-	for i := 0; i < len(best)-1; i++ {
-		for j := i + 1; j < len(best); j++ {
-			if best[j].rtt < best[i].rtt {
-				best[i], best[j] = best[j], best[i]
-			}
-		}
+	if n > len(candidates) {
+		n = len(candidates)
 	}
-
-	t.mu.RUnlock()
-
-	result := make([]string, len(best))
-	for i, s := range best {
-		result[i] = s.name
+	result := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		result = append(result, candidates[i].name)
 	}
 	return result
 }

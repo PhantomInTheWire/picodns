@@ -10,6 +10,19 @@ import (
 	"picodns/internal/dns"
 )
 
+type inflightCall struct {
+	done chan struct{}
+	err  error
+}
+
+// hashQuestion returns a cache key for a DNS question.
+func hashQuestion(name string, qType, qClass uint16) uint64 {
+	h := dns.HashNameString(name)
+	h ^= uint64(qType) << 32
+	h ^= uint64(qClass)
+	return h
+}
+
 // secureRandUint16 generates a cryptographically secure random uint16.
 func secureRandUint16() uint16 {
 	var b [2]byte
@@ -18,15 +31,10 @@ func secureRandUint16() uint16 {
 }
 
 // formatIPPort formats an IP address as "ip:port" string.
-// Uses a stack buffer to avoid allocations for the common case.
-// net.IP.String() returns at most 45 chars (IPv6 max)
-// plus ":53\0" = 5 more, so 50 bytes is plenty
 func formatIPPort(ip net.IP, port int) string {
 	var buf [50]byte
 	n := copy(buf[:], ip.String())
 	buf[n] = ':'
-	// Write port as decimal, always writing fixed number of digits
-	// based on the original port value to avoid dropping zeros
 	portStart := n + 1
 	if port >= 10000 {
 		buf[portStart] = byte('0' + port/10000)
@@ -49,7 +57,6 @@ func formatIPPort(ip net.IP, port int) string {
 }
 
 // cleanupBoth releases a pooled message and executes a cleanup function.
-// It safely handles nil cleanup functions.
 func cleanupBoth(msg *dns.Message, cleanup func()) {
 	if msg != nil {
 		msg.Release()
@@ -111,7 +118,6 @@ func cacheTTLForResponse(fullResp []byte, msg dns.Message, q dns.Question) (time
 		}
 	}
 
-	// Follow CNAME chain (if any) starting from the query name.
 	current := q.Name
 	seen := make(map[string]struct{}, 4)
 	seen[current] = struct{}{}
@@ -148,7 +154,6 @@ func cacheTTLForResponse(fullResp []byte, msg dns.Message, q dns.Question) (time
 
 	finalName := current
 
-	// Find final RRset matching query type.
 	foundFinal := false
 	for _, rr := range msg.Answers {
 		if rr.Class != q.Class {
@@ -170,12 +175,10 @@ func cacheTTLForResponse(fullResp []byte, msg dns.Message, q dns.Question) (time
 		return 0, false
 	}
 
-	// If we only got a CNAME chain (no final RRset), cache the response using the chain TTL.
 	if minTTL > 0 {
 		return time.Duration(minTTL) * time.Second, true
 	}
 
-	// NOERROR/NODATA: cache using SOA MINIMUM when present.
 	if hasSOA && soaTTL > 0 {
 		return soaTTL, true
 	}

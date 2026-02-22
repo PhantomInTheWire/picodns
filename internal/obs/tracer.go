@@ -47,24 +47,27 @@ func (t *FuncTracer) Name() string {
 	return t.name
 }
 
-// Trace starts tracing a function call. Returns a function to call on exit.
-// Usage: defer tracer.Trace()()
-// Note: This is goroutine-safe and uses 1/256 sampling.
-func (t *FuncTracer) Trace() func() {
-	// Sample at 1/256
-	if t.calls.Add(1)&sampleMask != 0 {
+// ShouldSample increments the call counter and reports whether this call should
+// be sampled. Sampling is 1/256.
+func (t *FuncTracer) ShouldSample() bool {
+	return t.calls.Add(1)&sampleMask == 0
+}
+
+// TraceSampled records timing only when sampled is true.
+//
+// This exists so callers can share a single sampling decision across nested
+// measurements (e.g. a function and its internal network segments).
+func (t *FuncTracer) TraceSampled(sampled bool) func() {
+	if !sampled {
 		return func() {}
 	}
 
 	t.sampled.Add(1)
 	start := time.Now()
-
 	return func() {
 		dt := time.Since(start)
 		ns := uint64(dt)
 		t.totalNs.Add(ns)
-
-		// Update max with CAS loop
 		for {
 			prev := t.maxNs.Load()
 			if ns <= prev {
@@ -75,6 +78,43 @@ func (t *FuncTracer) Trace() func() {
 			}
 		}
 	}
+}
+
+// TraceNested records timing only when sampled is true and increments both the
+// call counter and sampled counter.
+//
+// This is intended for nested segments where you want consistent sampling with
+// a parent function without paying per-call overhead when not sampled.
+func (t *FuncTracer) TraceNested(sampled bool) func() {
+	if !sampled {
+		return func() {}
+	}
+
+	t.calls.Add(1)
+	t.sampled.Add(1)
+	start := time.Now()
+	return func() {
+		dt := time.Since(start)
+		ns := uint64(dt)
+		t.totalNs.Add(ns)
+		for {
+			prev := t.maxNs.Load()
+			if ns <= prev {
+				break
+			}
+			if t.maxNs.CompareAndSwap(prev, ns) {
+				break
+			}
+		}
+	}
+}
+
+// Trace starts tracing a function call. Returns a function to call on exit.
+// Usage: defer tracer.Trace()()
+// Note: This is goroutine-safe and uses 1/256 sampling.
+func (t *FuncTracer) Trace() func() {
+	sampled := t.ShouldSample()
+	return t.TraceSampled(sampled)
 }
 
 // Snapshot returns a point-in-time snapshot of the tracer.

@@ -37,6 +37,7 @@ func (r *Recursive) Warmup(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			for tld := range jobs {
+				// Keep cancellation semantics for long-running warmup jobs.
 				tctx, cancel := context.WithTimeout(ctx, warmupQueryTimeout)
 				id := secureRandUint16()
 				reqHeader := dns.Header{ID: id, QDCount: 1, Flags: dns.FlagRD}
@@ -85,8 +86,8 @@ func (r *Recursive) warmupRTT(ctx context.Context) {
 		wg.Add(1)
 		go func(srv string) {
 			defer wg.Done()
-			tctx, cancel := context.WithTimeout(ctx, warmupQueryTimeout)
-			defer cancel()
+			// Avoid per-query timeout context allocation; transport enforces timeout.
+			tctx := ctx
 
 			id := secureRandUint16()
 			bufPtr := r.bufPool.Get()
@@ -98,7 +99,7 @@ func (r *Recursive) warmupRTT(ctx context.Context) {
 			}
 			query := buf[:n]
 			startQ := time.Now()
-			resp, cleanup, err := r.transport.Query(tctx, srv, query)
+			resp, cleanup, err := r.transport.Query(tctx, srv, query, warmupQueryTimeout)
 			r.bufPool.Put(bufPtr)
 			if err != nil {
 				if cleanup != nil {

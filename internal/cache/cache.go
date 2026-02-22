@@ -130,6 +130,56 @@ func (c *Cache) GetWithMetadataKey(key uint64) (value []byte, expires time.Time,
 	return value, expires, hits, origTTL, ttlOffs, true
 }
 
+// GetWithMetadataKeyStale behaves like GetWithMetadataKey, but can return an
+// expired entry as a "stale hit" for up to staleFor after expiry.
+//
+// This is used to implement stale-while-revalidate behavior in the resolver:
+// serving a slightly stale response immediately while refreshing in background.
+func (c *Cache) GetWithMetadataKeyStale(key uint64, staleFor time.Duration) (value []byte, expires time.Time, hits uint64, origTTL time.Duration, ttlOffs []uint16, stale bool, ok bool) {
+	shard := c.getShard(key)
+
+	now := c.clock()
+
+	shard.mu.RLock()
+	elem, ok := shard.items[key]
+	if !ok {
+		shard.mu.RUnlock()
+		return nil, time.Time{}, 0, 0, nil, false, false
+	}
+
+	item := elem.Value.(*entry)
+	if !item.expires.IsZero() && now.After(item.expires) {
+		if staleFor > 0 && now.Sub(item.expires) <= staleFor {
+			hits = atomic.AddUint64(&item.hits, 1)
+			value = item.value
+			expires = item.expires
+			origTTL = item.origTTL
+			ttlOffs = item.ttlOffs
+			shard.mu.RUnlock()
+			return value, expires, hits, origTTL, ttlOffs, true, true
+		}
+		shard.mu.RUnlock()
+		// Expired beyond stale window: upgrade to write lock to remove.
+		shard.mu.Lock()
+		if elem2, ok2 := shard.items[key]; ok2 {
+			item2 := elem2.Value.(*entry)
+			if !item2.expires.IsZero() && now.After(item2.expires) {
+				shard.removeElement(elem2)
+			}
+		}
+		shard.mu.Unlock()
+		return nil, time.Time{}, 0, 0, nil, false, false
+	}
+
+	hits = atomic.AddUint64(&item.hits, 1)
+	value = item.value
+	expires = item.expires
+	origTTL = item.origTTL
+	ttlOffs = item.ttlOffs
+	shard.mu.RUnlock()
+	return value, expires, hits, origTTL, ttlOffs, false, true
+}
+
 func (c *Cache) Set(key dns.Question, value []byte, ttl time.Duration) bool {
 	if ttl <= 0 {
 		return false
