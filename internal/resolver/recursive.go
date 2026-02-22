@@ -253,9 +253,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				if err == nil {
 					r.rttTracker.Update(queryCtx, srv, time.Since(startQ))
 				} else {
-					if ne, ok := err.(net.Error); ok && ne.Timeout() {
-						r.rttTracker.Timeout(queryCtx, srv)
-					}
+					r.rttTracker.Failure(queryCtx, srv)
 				}
 				if err == nil {
 					validateHeader := dns.Header{ID: outID, QDCount: 1}

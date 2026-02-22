@@ -17,7 +17,7 @@ type rttTracker struct {
 
 	tracers struct {
 		update   *obs.FuncTracer
-		timeout  *obs.FuncTracer
+		failure  *obs.FuncTracer
 		get      *obs.FuncTracer
 		sortBest *obs.FuncTracer
 	}
@@ -31,12 +31,12 @@ func newRTTTracker(parent *obs.FuncTracer) *rttTracker {
 	}
 
 	t.tracers.update = obs.NewFuncTracer("rttTracker.Update", parent)
-	t.tracers.timeout = obs.NewFuncTracer("rttTracker.Timeout", parent)
+	t.tracers.failure = obs.NewFuncTracer("rttTracker.Failure", parent)
 	t.tracers.get = obs.NewFuncTracer("rttTracker.Get", parent)
 	t.tracers.sortBest = obs.NewFuncTracer("rttTracker.SortBest", parent)
 
 	obs.GlobalRegistry.Register(t.tracers.update)
-	obs.GlobalRegistry.Register(t.tracers.timeout)
+	obs.GlobalRegistry.Register(t.tracers.failure)
 	obs.GlobalRegistry.Register(t.tracers.get)
 	obs.GlobalRegistry.Register(t.tracers.sortBest)
 
@@ -66,8 +66,8 @@ func (t *rttTracker) Update(ctx context.Context, server string, d time.Duration)
 	t.mu.Unlock()
 }
 
-func (t *rttTracker) Timeout(ctx context.Context, server string) {
-	defer t.tracers.timeout.Trace()()
+func (t *rttTracker) Failure(ctx context.Context, server string) {
+	defer t.tracers.failure.Trace()()
 
 	t.mu.Lock()
 	if len(t.timeouts) > maxRTTTrackerEntries {
@@ -78,16 +78,8 @@ func (t *rttTracker) Timeout(ctx context.Context, server string) {
 		}
 	}
 	count := t.timeouts[server] + 1
-	if count < 1 {
-		count = 1
-	}
-	if count > 6 {
-		count = 6
-	}
+	count = max(count, 1)
 	backoff := baseTimeoutBackoff << (count - 1)
-	if backoff > maxTimeoutBackoff {
-		backoff = maxTimeoutBackoff
-	}
 	t.timeouts[server] = count
 	t.cooldown[server] = time.Now().Add(backoff)
 	t.mu.Unlock()
