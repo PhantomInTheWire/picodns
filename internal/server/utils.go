@@ -127,6 +127,7 @@ func (s *Server) logShutdown(startTime time.Time, obsEnabled bool) {
 		s.logger.Info("server shutdown complete",
 			"total_queries", s.TotalQueries.Load(),
 			"dropped_packets", s.DroppedPackets.Load(),
+			"dropped_responses", s.DroppedResponses.Load(),
 			"handler_errors", s.HandlerErrors.Load(),
 			"write_errors", s.WriteErrors.Load(),
 		)
@@ -156,6 +157,7 @@ func (s *Server) logShutdown(startTime time.Time, obsEnabled bool) {
 		"queue_cap", cap(s.jobQueue),
 		"total_queries", total,
 		"dropped_packets", s.DroppedPackets.Load(),
+		"dropped_responses", s.DroppedResponses.Load(),
 		"handler_errors", s.HandlerErrors.Load(),
 		"write_errors", s.WriteErrors.Load(),
 		"cache_hits", hits,
@@ -163,9 +165,7 @@ func (s *Server) logShutdown(startTime time.Time, obsEnabled bool) {
 		"cache_hit_rate", cacheHitRate,
 	)
 
-	if obsEnabled {
-		s.writePerfReport()
-	}
+	s.writePerfReport()
 }
 
 func (s *Server) writePerfReport() {

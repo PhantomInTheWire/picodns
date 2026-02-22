@@ -81,9 +81,15 @@ func (s *Server) udpWriteLoop(writer *udpWriter) {
 func (s *Server) udpReadLoop(ctx context.Context, writer *udpWriter, cacheResolver types.CacheResolver) {
 	defer func() { _ = writer.conn.Close() }()
 
+	done := make(chan struct{})
+	defer close(done)
+
 	go func() {
-		<-ctx.Done()
-		_ = writer.conn.Close()
+		select {
+		case <-ctx.Done():
+			_ = writer.conn.Close()
+		case <-done:
+		}
 	}()
 
 	// Rate-limit read errors.
@@ -113,11 +119,12 @@ func (s *Server) udpReadLoop(ctx context.Context, writer *udpWriter, cacheResolv
 				var formerr [dns.HeaderLen]byte
 				formerr[0] = byte(hdr.ID >> 8)
 				formerr[1] = byte(hdr.ID)
-				// 0x80 = QR=1 (response), 0x81 = QR=1|RD=1
+				// 0x80 = QR=1 (response), 0x01 = RD; preserve OPCODE from request
+				opcode := byte((hdr.Flags & dns.FlagOpcode) >> 8)
 				if hdr.Flags&dns.FlagRD != 0 {
-					formerr[2] = 0x81
+					formerr[2] = 0x80 | 0x01 | opcode
 				} else {
-					formerr[2] = 0x80
+					formerr[2] = 0x80 | opcode
 				}
 				// RCODE=1 (Format Error)
 				formerr[3] = 0x01
@@ -209,7 +216,7 @@ func (s *Server) worker(ctx context.Context) {
 			case job.writer.ch <- udpWrite{resp: resp, addr: job.addr, cleanup: cleanup, bufPtr: job.dataPtr}:
 			default:
 				// Backpressure: drop response but release resources.
-				s.WriteErrors.Add(1)
+				s.DroppedResponses.Add(1)
 				if cleanup != nil {
 					cleanup()
 				}
