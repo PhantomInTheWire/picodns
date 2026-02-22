@@ -11,7 +11,6 @@ type Config struct {
 	ListenAddrs   []string
 	Upstreams     []string
 	Workers       int
-	UDPSockets    int
 	CacheSize     int
 	LogLevel      string
 	Recursive     bool
@@ -27,7 +26,6 @@ func Default() Config {
 		ListenAddrs: []string{":53"},
 		Upstreams:   []string{"1.1.1.1:53"},
 		Workers:     128,
-		UDPSockets:  1,
 
 		CacheSize:     10000,
 		LogLevel:      "info",
@@ -51,7 +49,6 @@ func BindFlags(cfg *Config) {
 	flag.StringVar(&listen, "listen", strings.Join(cfg.ListenAddrs, ","), "comma-separated listen addresses")
 	flag.StringVar(&upstreams, "upstreams", strings.Join(cfg.Upstreams, ","), "comma-separated upstreams")
 	flag.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker pool size")
-	flag.IntVar(&cfg.UDPSockets, "udp-sockets", cfg.UDPSockets, "number of UDP sockets to listen on per address (1 disables SO_REUSEPORT)")
 	flag.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "max cache entries")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level (debug, info, warn, error)")
 	flag.BoolVar(&cfg.Recursive, "recursive", cfg.Recursive, "use recursive resolution instead of forwarding to upstreams")
