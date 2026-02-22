@@ -78,8 +78,13 @@ func (t *rttTracker) Failure(ctx context.Context, server string) {
 		}
 	}
 	count := t.timeouts[server] + 1
-	count = max(count, 1)
+	if count > 6 {
+		count = 6
+	}
 	backoff := baseTimeoutBackoff << (count - 1)
+	if backoff > maxTimeoutBackoff {
+		backoff = maxTimeoutBackoff
+	}
 	t.timeouts[server] = count
 	t.cooldown[server] = time.Now().Add(backoff)
 	t.mu.Unlock()
