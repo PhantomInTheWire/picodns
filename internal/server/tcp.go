@@ -44,6 +44,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 			}
 			// Best-effort SERVFAIL response.
 			if sf, ok := servfailFromRequestInPlace(buf); ok {
+				s.maybeLogServfail(sf, conn.RemoteAddr())
 				binary.BigEndian.PutUint16(lenBuf[:], uint16(len(sf)))
 				if _, werr := conn.Write(lenBuf[:]); werr == nil {
 					_, _ = conn.Write(sf)
@@ -70,6 +71,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 		}
 
 		binary.BigEndian.PutUint16(lenBuf[:], uint16(len(resp)))
+		s.maybeLogServfail(resp, conn.RemoteAddr())
 		if _, err := conn.Write(lenBuf[:]); err != nil {
 			s.WriteErrors.Add(1)
 			s.logger.Error("write error", "error", err)

@@ -48,7 +48,11 @@ func newConnPool() *connPool {
 // get returns a connection from the pool or creates a new one.
 // Stale connections (idle longer than ConnPoolIdleTimeout) are closed and removed.
 // If the pool is exhausted, it creates an ephemeral connection as a fallback.
-func (p *connPool) get(ctx context.Context) (*net.UDPConn, func(), error) {
+//
+// The returned release function must be called. If bad is true, the connection is
+// closed and removed (so late UDP responses on that local port can't poison future
+// queries when sockets are reused).
+func (p *connPool) get(ctx context.Context) (*net.UDPConn, func(bad bool), error) {
 	defer p.tracers.get.Trace()()
 
 	p.mu.Lock()
@@ -79,7 +83,7 @@ func (p *connPool) get(ctx context.Context) (*net.UDPConn, func(), error) {
 		uc := p.conns[activeIdx]
 		uc.inUse = true
 		uc.lastUsed = now
-		return uc.conn, func() { p.release(uc) }, nil
+		return uc.conn, func(bad bool) { p.releaseOrDiscard(uc, bad) }, nil
 	}
 
 	if len(p.conns) < ConnPoolMaxConns {
@@ -94,18 +98,17 @@ func (p *connPool) get(ctx context.Context) (*net.UDPConn, func(), error) {
 			inUse:    true,
 		}
 		p.conns = append(p.conns, uc)
-		return conn, func() { p.release(uc) }, nil
+		return conn, func(bad bool) { p.releaseOrDiscard(uc, bad) }, nil
 	}
 
 	conn, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	return conn, func() { _ = conn.Close() }, nil
+	return conn, func(bad bool) { _ = conn.Close() }, nil
 }
 
-// release marks a connection as available
-func (p *connPool) release(uc *udpConn) {
+func (p *connPool) releaseOrDiscard(uc *udpConn, bad bool) {
 	defer p.tracers.release.Trace()()
 
 	p.mu.Lock()
@@ -113,4 +116,14 @@ func (p *connPool) release(uc *udpConn) {
 
 	uc.inUse = false
 	uc.lastUsed = time.Now()
+	if !bad {
+		return
+	}
+	_ = uc.conn.Close()
+	for i := 0; i < len(p.conns); i++ {
+		if p.conns[i] == uc {
+			p.conns = append(p.conns[:i], p.conns[i+1:]...)
+			break
+		}
+	}
 }
