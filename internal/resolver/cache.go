@@ -254,6 +254,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 			c.logger.Debug("dns response validation mismatch; skip cache", "name", q.Name, "type", q.Type, "error", vErr)
 		}
 		call.err = nil
+		setResponseID(resp, reqHeader.ID)
 		return resp, cleanupResp, nil
 	}
 
@@ -265,6 +266,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	}
 
 	setRAFlag(resp)
+	setResponseID(resp, reqHeader.ID)
 
 	if debugEnabled {
 		c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start))
@@ -372,6 +374,9 @@ func (c *Cached) getCachedWithMetadataKey(key uint64, queryID uint16) ([]byte, f
 	sec := uint32(0)
 	if remaining > 0 {
 		sec = uint32(remaining / time.Second)
+		if sec == 0 {
+			sec = 1
+		}
 	}
 	if sec > 0 {
 		if orig := uint32(origTTL / time.Second); orig == 0 || sec < orig {
