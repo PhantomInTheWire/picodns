@@ -20,20 +20,20 @@ lint:
 
 build:
 	mkdir -p bin
-	go build -o bin/dnsd ./cmd/dnsd
+	go build -o bin/picodns ./cmd/picodns
 
 build-perf:
 	mkdir -p bin
-	go build -tags=perf -o bin/dnsd ./cmd/dnsd
+	go build -tags=perf -o bin/picodns ./cmd/picodns
 
 clean:
 	rm -rf bin
 
 run: build
-	./bin/dnsd -listen :1053 -upstreams 1.1.1.1:53,8.8.8.8:53
+	./bin/picodns -listen :1053 -upstreams 1.1.1.1:53,8.8.8.8:53
 
 run-recursive: build
-	./bin/dnsd -recursive -listen :1053
+	./bin/picodns -recursive -listen :1053
 
 bench:
 	./scripts/bench.py

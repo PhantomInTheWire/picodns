@@ -38,7 +38,7 @@ class BenchmarkRunnerBase:
         self.warmup_duration = int(os.getenv("WARMUP_DURATION", "2"))
         self.warmup_qps = int(os.getenv("WARMUP_QPS", "2000"))
 
-        self.dnsd_pid: Optional[int] = None
+        self.picodns_pid: Optional[int] = None
         self.kresd_pid: Optional[int] = None
         self.kresd_dir: Optional[Path] = None
         self.pico_result: Optional[Dict] = None
@@ -405,10 +405,10 @@ class BenchmarkRunnerBase:
                     )
 
     def _cleanup(self):
-        if self.dnsd_pid:
+        if self.picodns_pid:
             try:
-                os.kill(self.dnsd_pid, signal.SIGTERM)
-                os.waitpid(self.dnsd_pid, 0)
+                os.kill(self.picodns_pid, signal.SIGTERM)
+                os.waitpid(self.picodns_pid, 0)
             except (ProcessLookupError, ChildProcessError):
                 pass
 
@@ -451,7 +451,7 @@ class BenchmarkRunnerBase:
             log_file.write_text("")
 
         cmd = [
-            str(self.root_dir / "bin" / "dnsd"),
+            str(self.root_dir / "bin" / "picodns"),
             "-recursive",
             "-listen",
             f"127.0.0.1:{self.port}",
@@ -462,18 +462,18 @@ class BenchmarkRunnerBase:
             str(self.perf_report_path),
         ]
 
-        log_level = os.getenv("DNSD_LOG_LEVEL", "").strip()
+        log_level = os.getenv("PICODNS_LOG_LEVEL", "").strip()
         if log_level:
             cmd.extend(["-log-level", log_level])
 
         with open("/tmp/picodns.log", "w") as log:
             proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
-            self.dnsd_pid = proc.pid
+            self.picodns_pid = proc.pid
 
         time.sleep(self.start_delay)
 
         try:
-            os.kill(self.dnsd_pid, 0)
+            os.kill(self.picodns_pid, 0)
         except ProcessLookupError:
             console.print(
                 "[bright_red]Error:[/] PicoDNS failed to start. Check /tmp/picodns.log",
