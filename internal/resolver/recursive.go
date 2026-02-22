@@ -17,8 +17,12 @@ import (
 	"picodns/internal/types"
 )
 
-// Recursive is a recursive DNS resolver that performs iterative resolution
-// starting from root servers and following referrals.
+type inflightRecursive struct {
+	done chan struct{}
+	resp []byte
+	err  error
+}
+
 type Recursive struct {
 	transport       types.Transport
 	bufPool         *pool.Bytes
@@ -31,18 +35,24 @@ type Recursive struct {
 	ObsEnabled      bool
 	querySem        chan struct{}
 
-	// Function tracers
+	inflightMu sync.Mutex
+	inflight   map[uint64]*inflightRecursive
+
 	tracers struct {
 		resolve          *obs.FuncTracer
 		resolveIterative *obs.FuncTracer
+		iterHopWait      *obs.FuncTracer
+		iterParseMsg     *obs.FuncTracer
+		iterMinimize     *obs.FuncTracer
+		iterReferral     *obs.FuncTracer
+		iterResolveNS    *obs.FuncTracer
 		resolveNSNames   *obs.FuncTracer
 		warmup           *obs.FuncTracer
 		warmupRTT        *obs.FuncTracer
 	}
 }
 
-// NewRecursive creates a new recursive DNS resolver with the provided options.
-// If no options are provided, the resolver uses default root servers.
+// NewRecursive creates a new recursive DNS resolver.
 func NewRecursive(opts ...Option) *Recursive {
 	r := &Recursive{
 		bufPool:         pool.DefaultPool,
@@ -52,22 +62,30 @@ func NewRecursive(opts ...Option) *Recursive {
 		nsCache:         cache.NewTTL[string, []string](nil),
 		delegationCache: newDelegationCache(),
 		querySem:        make(chan struct{}, 256),
+		inflight:        make(map[uint64]*inflightRecursive),
 	}
 	r.nsCache.MaxLen = maxNSCacheEntries
 
-	// Initialize tracers
 	r.tracers.resolve = obs.NewFuncTracer("Recursive.Resolve", nil)
 	r.tracers.resolveIterative = obs.NewFuncTracer("Recursive.resolveIterative", r.tracers.resolve)
+	r.tracers.iterHopWait = obs.NewFuncTracer("Recursive.resolveIterative.hopWait", r.tracers.resolveIterative)
+	r.tracers.iterParseMsg = obs.NewFuncTracer("Recursive.resolveIterative.parseMsg", r.tracers.resolveIterative)
+	r.tracers.iterMinimize = obs.NewFuncTracer("Recursive.resolveIterative.minimize", r.tracers.resolveIterative)
+	r.tracers.iterReferral = obs.NewFuncTracer("Recursive.resolveIterative.referral", r.tracers.resolveIterative)
+	r.tracers.iterResolveNS = obs.NewFuncTracer("Recursive.resolveIterative.resolveNS", r.tracers.resolveIterative)
 	r.tracers.resolveNSNames = obs.NewFuncTracer("Recursive.resolveNSNames", r.tracers.resolveIterative)
 	r.tracers.warmup = obs.NewFuncTracer("Recursive.Warmup", r.tracers.resolve)
 	r.tracers.warmupRTT = obs.NewFuncTracer("Recursive.warmupRTT", r.tracers.warmup)
 
-	// Initialize RTT tracker with tracer
 	r.rttTracker = newRTTTracker(r.tracers.resolveIterative)
 
-	// Register tracers
 	obs.GlobalRegistry.Register(r.tracers.resolve)
 	obs.GlobalRegistry.Register(r.tracers.resolveIterative)
+	obs.GlobalRegistry.Register(r.tracers.iterHopWait)
+	obs.GlobalRegistry.Register(r.tracers.iterParseMsg)
+	obs.GlobalRegistry.Register(r.tracers.iterMinimize)
+	obs.GlobalRegistry.Register(r.tracers.iterReferral)
+	obs.GlobalRegistry.Register(r.tracers.iterResolveNS)
 	obs.GlobalRegistry.Register(r.tracers.resolveNSNames)
 	obs.GlobalRegistry.Register(r.tracers.warmup)
 	obs.GlobalRegistry.Register(r.tracers.warmupRTT)
@@ -134,8 +152,75 @@ func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), er
 		return nil, nil, errors.New("recursive resolver: invalid request")
 	}
 
+	key := hashQuestion(q.Name, q.Type, q.Class)
+
+	call, leader := r.acquireInflightRecursive(key)
+	if !leader {
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-call.done:
+		}
+		if call.err != nil {
+			return nil, nil, call.err
+		}
+		resp := make([]byte, len(call.resp))
+		copy(resp, call.resp)
+		setResponseID(resp, hdr.ID)
+		return resp, nil, nil
+	}
+
+	// Leader path: resolve once, then publish a deep copy to waiters.
+	// Waiters must never observe pooled backing bytes or share cleanup funcs.
+	var (
+		outResp    []byte
+		outCleanup func()
+		outErr     error
+	)
+	defer func() {
+		rec := recover()
+		if rec != nil {
+			call.err = fmt.Errorf("recursive resolver panic: %v", rec)
+			call.resp = nil
+		} else {
+			call.err = outErr
+			if outErr == nil && outResp != nil {
+				respCopy := make([]byte, len(outResp))
+				copy(respCopy, outResp)
+				call.resp = respCopy
+			} else {
+				call.resp = nil
+			}
+		}
+		close(call.done)
+		r.releaseInflightRecursive(key)
+		if rec != nil {
+			panic(rec)
+		}
+	}()
+
 	stats := &resolutionStats{}
-	return r.resolveIterative(ctx, hdr, []dns.Question{q}, q.Name, 0, nil, stats, false)
+	outResp, outCleanup, outErr = r.resolveIterative(ctx, hdr, []dns.Question{q}, q.Name, 0, nil, stats, false)
+	return outResp, outCleanup, outErr
+}
+
+func (r *Recursive) acquireInflightRecursive(key uint64) (*inflightRecursive, bool) {
+	r.inflightMu.Lock()
+	defer r.inflightMu.Unlock()
+
+	if existing, ok := r.inflight[key]; ok {
+		return existing, false
+	}
+
+	call := &inflightRecursive{done: make(chan struct{})}
+	r.inflight[key] = call
+	return call, true
+}
+
+func (r *Recursive) releaseInflightRecursive(key uint64) {
+	r.inflightMu.Lock()
+	defer r.inflightMu.Unlock()
+	delete(r.inflight, key)
 }
 
 // resolveIterative performs iterative DNS resolution starting from root servers.
@@ -144,7 +229,9 @@ func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), er
 // performs bailiwick checking: root can provide glue for any TLD, but
 // TLDs should only provide glue for in-bailiwick nameservers.
 func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, questions []dns.Question, name string, depth int, seenCnames map[string]struct{}, stats *resolutionStats, isGlue bool) ([]byte, func(), error) {
-	defer r.tracers.resolveIterative.Trace()()
+	sampled := r.tracers.resolveIterative.ShouldSample()
+	done := r.tracers.resolveIterative.TraceSampled(sampled)
+	defer done()
 
 	if depth >= maxRecursionDepth {
 		return nil, nil, ErrMaxDepth
@@ -201,7 +288,11 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				defer func() { resultChan <- res }()
 
 				if idx > 0 {
-					stagger := r.rttTracker.Get(queryCtx, servers[idx-1]) * rttMultiplier / 10
+					prevRTT, ok := r.rttTracker.Get(queryCtx, servers[idx-1])
+					if !ok {
+						prevRTT = unknownStaggerRTT
+					}
+					stagger := prevRTT * rttMultiplier / 10
 					if stagger < minStaggerDelay {
 						stagger = minStaggerDelay
 					}
@@ -228,15 +319,14 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				}
 				query := buf[:n]
 				startQ := time.Now()
-				rtt := r.rttTracker.Get(queryCtx, srv)
-				if rtt <= 0 {
+				rtt, ok := r.rttTracker.Get(queryCtx, srv)
+				if !ok || rtt <= 0 {
 					rtt = unknownRTT
 				}
 				qTimeout := rtt * queryTimeoutMul
 				if qTimeout < minQueryTimeout {
 					qTimeout = minQueryTimeout
 				}
-				// Cap total outbound concurrency.
 				select {
 				case r.querySem <- struct{}{}:
 					defer func() { <-r.querySem }()
@@ -246,9 +336,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					return
 				}
 
-				tctx, cancel := context.WithTimeout(queryCtx, qTimeout)
-				resp, cleanup, err := r.transport.Query(tctx, srv, query)
-				cancel()
+				resp, cleanup, err := r.transport.Query(queryCtx, srv, query, qTimeout)
 				r.bufPool.Put(bufPtr)
 				if err == nil {
 					r.rttTracker.Update(queryCtx, srv, time.Since(startQ))
@@ -264,7 +352,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 						res.err = vErr
 						return
 					}
-					// Note: setResponseID is called later on the final returned response
 				}
 				res.resp = resp
 				res.cleanup = cleanup
@@ -275,29 +362,67 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		var resp []byte
 		var cleanup func()
 		var respServer string
-		for i := 0; i < len(servers); i++ {
-			res := <-resultChan
-			if res.err == nil {
-				if resp == nil {
-					resp = res.resp
-					cleanup = res.cleanup
-					respServer = res.server
-					if stats != nil {
-						stats.hops++
+		received := 0
+		var ctxErr error
+		// Receive results; pick a winner (first success) but ensure all other
+		// successful results have their cleanup called to return pooled buffers
+		// and release pooled UDP conns.
+		segWait := r.tracers.iterHopWait.TraceNested(sampled)
+		for received < len(servers) {
+			select {
+			case res := <-resultChan:
+				received++
+				if res.err == nil {
+					if ctxErr != nil {
+						if res.cleanup != nil {
+							res.cleanup()
+						}
+						continue
 					}
-					// We have a winner; cancel outstanding queries for this hop.
+					if resp == nil {
+						resp = res.resp
+						cleanup = res.cleanup
+						respServer = res.server
+						if stats != nil {
+							stats.hops++
+						}
+						cancelQueries()
+
+						// Drain remaining results in the background so we always run
+						// cleanup for non-winning successful queries.
+						remaining := len(servers) - received
+						if remaining > 0 {
+							go func(n int) {
+								for i := 0; i < n; i++ {
+									r := <-resultChan
+									if r.cleanup != nil {
+										r.cleanup()
+									}
+								}
+							}(remaining)
+						}
+						received = len(servers)
+						break
+					}
+					if res.cleanup != nil {
+						res.cleanup()
+					}
+				} else if ctxErr == nil {
+					lastErr = res.err
+				}
+			case <-ctx.Done():
+				if ctxErr == nil {
+					ctxErr = ctx.Err()
 					cancelQueries()
-					continue
 				}
-				if res.cleanup != nil {
-					res.cleanup()
-				}
-			} else {
-				lastErr = res.err
 			}
 		}
-		// Ensure we always cancel per-hop query context.
+		segWait()
 		cancelQueries()
+
+		if ctxErr != nil && resp == nil {
+			return nil, nil, ctxErr
+		}
 
 		if resp == nil {
 			if debugEnabled {
@@ -316,7 +441,9 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			return nil, nil, ErrNoNameservers
 		}
 
+		segParse := r.tracers.iterParseMsg.TraceNested(sampled)
 		respMsg, err := dns.ReadMessagePooled(resp)
+		segParse()
 		if err != nil {
 			cleanupBoth(nil, cleanup)
 			return nil, nil, err
@@ -366,13 +493,17 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				}
 			}
 			respMsg.Release()
+			segMin := r.tracers.iterMinimize.TraceNested(sampled)
 			minimized, _ := minimizeAndSetID(resp, clientID, false)
+			segMin()
 			return minimized, cleanup, nil
 		}
 
 		if (respMsg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
 			respMsg.Release()
+			segMin := r.tracers.iterMinimize.TraceNested(sampled)
 			minimized, _ := minimizeAndSetID(resp, clientID, true)
+			segMin()
 			return minimized, cleanup, nil
 		}
 
@@ -395,7 +526,9 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			if zone != "." {
 				bailiwickZone = childZone
 			}
+			segRef := r.tracers.iterReferral.TraceNested(sampled)
 			nsServers, glueIPs := extractReferral(resp, *respMsg, bailiwickZone)
+			segRef()
 			respMsg.Release()
 			if len(nsServers) == 0 {
 				cleanupBoth(nil, cleanup)
@@ -407,7 +540,9 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				r.delegationCache.Set(childZone, glueIPs, time.Duration(minTTL)*time.Second)
 				cleanupBoth(nil, cleanup)
 			} else {
+				segNS := r.tracers.iterResolveNS.TraceNested(sampled)
 				resolvedIPs, err := r.resolveNSNames(ctx, nsServers, depth+1, seenCnames, stats)
+				segNS()
 				cleanupBoth(nil, cleanup)
 				if err != nil {
 					continue

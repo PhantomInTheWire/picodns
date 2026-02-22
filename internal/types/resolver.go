@@ -1,7 +1,10 @@
 // Package types contains shared interface definitions to avoid import cycles.
 package types
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Resolver is the interface for DNS resolution.
 type Resolver interface {
@@ -19,5 +22,10 @@ type CacheResolver interface {
 
 // Transport is the interface for DNS query transports.
 type Transport interface {
-	Query(ctx context.Context, server string, req []byte) (resp []byte, cleanup func(), err error)
+	// Query sends req to server and returns a response.
+	//
+	// If timeout > 0, it is used as the exchange timeout (independent of any
+	// context deadline, which is still respected if sooner).
+	// If timeout <= 0, the transport chooses a default timeout.
+	Query(ctx context.Context, server string, req []byte, timeout time.Duration) (resp []byte, cleanup func(), err error)
 }

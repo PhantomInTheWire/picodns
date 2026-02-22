@@ -25,6 +25,18 @@ func (t *FuncTracer) Trace() func() {
 	return func() {}
 }
 
+func (t *FuncTracer) ShouldSample() bool {
+	return false
+}
+
+func (t *FuncTracer) TraceSampled(sampled bool) func() {
+	return func() {}
+}
+
+func (t *FuncTracer) TraceNested(sampled bool) func() {
+	return func() {}
+}
+
 // Snapshot returns empty snapshot.
 func (t *FuncTracer) Snapshot() TracerSnapshot {
 	return TracerSnapshot{}

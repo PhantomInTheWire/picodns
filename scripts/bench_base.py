@@ -315,7 +315,78 @@ class BenchmarkRunnerBase:
             )
 
         console.print(table)
+
+        self._format_breakdowns(data)
         console.print(f"\n[dim]Report saved to: {report_path}[/]")
+
+    def _format_breakdowns(self, data: Dict[str, Any]) -> None:
+        funcs = data.get("functions", []) or []
+        by_name = {f.get("name"): f for f in funcs if f.get("name")}
+
+        def total_ns(name: str) -> int:
+            return int(by_name.get(name, {}).get("total_ns", 0) or 0)
+
+        def calls(name: str) -> int:
+            return int(by_name.get(name, {}).get("calls", 0) or 0)
+
+        def breakdown(title: str, root: str, components: List[str]) -> None:
+            root_total = total_ns(root)
+            if root_total <= 0:
+                return
+
+            comp_totals = [(name, total_ns(name)) for name in components]
+            known = sum(ns for _, ns in comp_totals)
+            other = max(0, root_total - known)
+
+            self._print_subheader(title, "bright_cyan")
+            t = Table(
+                box=box.ROUNDED, show_header=True, header_style="bold", expand=True
+            )
+            t.add_column("Component", justify="left", no_wrap=True)
+            t.add_column("Calls", justify="right")
+            t.add_column("Total", justify="right")
+            t.add_column(f"% {root}", justify="right")
+
+            for name, ns in comp_totals:
+                pct = (ns / root_total * 100) if root_total > 0 else 0
+                t.add_row(
+                    name, f"{calls(name):,}", self._format_duration(ns), f"{pct:5.1f}%"
+                )
+
+            pct_other = (other / root_total * 100) if root_total > 0 else 0
+            t.add_row(
+                f"{root}.other", "-", self._format_duration(other), f"{pct_other:5.1f}%"
+            )
+            console.print(t)
+
+        breakdown(
+            "Network Breakdown (Sampled)",
+            "queryUDP",
+            ["queryUDP.netRead", "queryUDP.netWrite", "queryUDP.netDeadline"],
+        )
+        breakdown(
+            "Recursive.resolveIterative Breakdown (Sampled)",
+            "Recursive.resolveIterative",
+            [
+                "Recursive.resolveIterative.hopWait",
+                "Recursive.resolveIterative.parseMsg",
+                "Recursive.resolveIterative.referral",
+                "Recursive.resolveIterative.resolveNS",
+                "Recursive.resolveIterative.minimize",
+            ],
+        )
+        breakdown(
+            "Cached.Resolve Breakdown (Sampled)",
+            "Cached.Resolve",
+            [
+                "Cached.Resolve.fastPath",
+                "Cached.Resolve.parseReq",
+                "Cached.Resolve.inflightWait",
+                "Cached.Resolve.upstream",
+                "Cached.Resolve.validate",
+                "Cached.Resolve.cacheSet",
+            ],
+        )
 
     def _format_duration(self, ns: int) -> str:
         if ns < 1000:

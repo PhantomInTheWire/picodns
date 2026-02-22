@@ -3,7 +3,6 @@ package resolver
 import (
 	"context"
 	"errors"
-	"net"
 
 	"picodns/internal/cache"
 	"picodns/internal/pool"
@@ -38,7 +37,7 @@ func NewUpstream(upstreamAddrs []string) (*Upstream, error) {
 	}
 
 	for _, addr := range upstreamAddrs {
-		if _, err := net.ResolveUDPAddr("udp", addr); err != nil {
+		if _, err := resolveUDPAddr(context.Background(), addr); err != nil {
 			return nil, err
 		}
 	}
@@ -56,7 +55,7 @@ func (u *Upstream) Resolve(ctx context.Context, req []byte) ([]byte, func(), err
 
 	var lastErr error
 	for _, upstream := range u.upstreams {
-		resp, cleanup, err := u.transport.Query(ctx, upstream, req)
+		resp, cleanup, err := u.transport.Query(ctx, upstream, req, 0)
 		if err != nil {
 			lastErr = err
 			continue

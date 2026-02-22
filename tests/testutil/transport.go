@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"picodns/internal/dns"
 	"picodns/tests/testutil/dnstest"
@@ -37,8 +38,8 @@ func (m *MockTransport) RegisterHandler(server string, handler MockHandler) {
 	m.handlers[server] = handler
 }
 
-// Query implements the resolver.Transport interface.
-func (m *MockTransport) Query(ctx context.Context, server string, req []byte) ([]byte, func(), error) {
+// Query implements the types.Transport interface.
+func (m *MockTransport) Query(ctx context.Context, server string, req []byte, timeout time.Duration) ([]byte, func(), error) {
 	// Log that this server was queried
 	if m.queryLog != nil {
 		m.queryLog.Store(server, true)

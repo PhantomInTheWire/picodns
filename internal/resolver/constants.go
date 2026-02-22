@@ -42,14 +42,16 @@ const (
 	prefetchThreshold      = 2                // Minimum cache hits before considering prefetch
 	prefetchRemainingRatio = 10               // Prefetch when remaining TTL is less than 1/10th of original
 	prefetchTimeout        = 10 * time.Second // Timeout for background prefetch operations
+	serveStaleFor          = 30 * time.Second // Serve expired cache entries for this long (stale-while-revalidate)
 
 	// Parallel query settings
 	defaultMaxServers  = 3                      // Maximum concurrent servers for normal queries
 	glueMaxServers     = 2                      // Maximum concurrent servers for glue queries
-	minStaggerDelay    = 15 * time.Millisecond  // Minimum stagger between concurrent queries
-	maxStaggerDelay    = 300 * time.Millisecond // Maximum stagger between concurrent queries
-	rttMultiplier      = 10                     // RTT multiplier for stagger (10/10 = 1.0x)
+	minStaggerDelay    = 0 * time.Millisecond   // Minimum stagger between concurrent queries
+	maxStaggerDelay    = 20 * time.Millisecond  // Maximum stagger between concurrent queries
+	rttMultiplier      = 7                      // RTT multiplier for stagger (7/10 = 0.7x)
 	unknownRTT         = 500 * time.Millisecond // RTT used for servers with no prior samples
+	unknownStaggerRTT  = 0 * time.Millisecond   // Stagger RTT baseline when no RTT sample exists
 	queryTimeoutMul    = 4                      // Per-hop timeout = RTT * mul
 	minQueryTimeout    = 80 * time.Millisecond  // Lower bound for per-hop timeout
 	maxTimeoutBackoff  = 5 * time.Second        // Upper bound on timeout backoff
