@@ -299,11 +299,7 @@ func IsValidRequest(buf []byte) bool {
 	// Basic question parsing check - just verify the name is readable
 	off := HeaderLen
 	_, err = SkipName(buf, off)
-	if err != nil {
-		return false
-	}
-
-	return true
+	return err == nil
 }
 
 func ValidateResponse(req []byte, resp []byte) error {

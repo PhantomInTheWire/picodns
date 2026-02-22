@@ -17,7 +17,8 @@ func TestHeaderRoundTrip(t *testing.T) {
 		ARCount: 4,
 	}
 
-	require.NoError(t, WriteHeader(buf, header))
+	err := WriteHeader(buf, header)
+	require.NoError(t, err)
 	decoded, err := ReadHeader(buf)
 	require.NoError(t, err)
 	require.Equal(t, header, decoded)
@@ -39,7 +40,8 @@ func TestQuestionRoundTrip(t *testing.T) {
 func TestReadMessage(t *testing.T) {
 	buf := make([]byte, 512)
 	h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1, ANCount: 1}
-	require.NoError(t, WriteHeader(buf, h))
+	err := WriteHeader(buf, h)
+	require.NoError(t, err)
 
 	q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 	qEnd, err := WriteQuestion(buf, HeaderLen, q)
@@ -71,7 +73,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "valid request",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 				n, err := WriteQuestion(buf, HeaderLen, q)
 				require.NoError(t, err)
@@ -90,7 +93,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "response instead of query",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: FlagQR | 0x0100, QDCount: 1}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 				n, err := WriteQuestion(buf, HeaderLen, q)
 				require.NoError(t, err)
@@ -102,7 +106,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "zero questions",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 0}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				return HeaderLen
 			},
 			want: false,
@@ -111,7 +116,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "multiple questions",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 2}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 				n, err := WriteQuestion(buf, HeaderLen, q)
 				require.NoError(t, err)
@@ -123,7 +129,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "has answers",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1, ANCount: 1}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 				n, err := WriteQuestion(buf, HeaderLen, q)
 				require.NoError(t, err)
@@ -135,7 +142,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "has authorities",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1, NSCount: 1}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 				n, err := WriteQuestion(buf, HeaderLen, q)
 				require.NoError(t, err)
@@ -147,7 +155,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "non-zero opcode",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x2800, QDCount: 1} // Opcode 1 (inverse query)
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 				n, err := WriteQuestion(buf, HeaderLen, q)
 				require.NoError(t, err)
@@ -159,7 +168,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "truncated question name",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				// Write incomplete name - just a label length byte
 				buf[HeaderLen] = 10
 				return HeaderLen + 1
@@ -170,7 +180,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "missing qtype and qclass",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				q := Question{Name: "x", Type: TypeA, Class: ClassIN}
 				n, err := WriteQuestion(buf, HeaderLen, q)
 				require.NoError(t, err)
@@ -183,7 +194,8 @@ func TestIsValidRequest(t *testing.T) {
 			name: "invalid first byte",
 			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				require.NoError(t, WriteHeader(buf, h))
+				err := WriteHeader(buf, h)
+				require.NoError(t, err)
 				// Put an invalid byte (0x80 - not a valid label length or compression)
 				buf[HeaderLen] = 0x80
 				return HeaderLen + 5
@@ -205,7 +217,8 @@ func TestIsValidRequest(t *testing.T) {
 func BenchmarkIsValidRequest(b *testing.B) {
 	buf := make([]byte, 512)
 	h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-	WriteHeader(buf, h)
+	err := WriteHeader(buf, h)
+	require.NoError(b, err)
 	q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
 	n, _ := WriteQuestion(buf, HeaderLen, q)
 	req := buf[:n]
