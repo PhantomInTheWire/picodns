@@ -455,8 +455,6 @@ class BenchmarkRunnerBase:
             "-recursive",
             "-listen",
             f"127.0.0.1:{self.port}",
-            "-udp-sockets",
-            str(self.udp_sockets),
             "-stats",
             "-perf-report",
             str(self.perf_report_path),

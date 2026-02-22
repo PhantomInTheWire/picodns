@@ -25,29 +25,26 @@ func formatIPPort(ip net.IP, port int) string {
 	var buf [50]byte
 	n := copy(buf[:], ip.String())
 	buf[n] = ':'
-	// Write port as decimal
+	// Write port as decimal, always writing fixed number of digits
+	// based on the original port value to avoid dropping zeros
 	portStart := n + 1
 	if port >= 10000 {
 		buf[portStart] = byte('0' + port/10000)
 		portStart++
-		port %= 10000
 	}
 	if port >= 1000 {
-		buf[portStart] = byte('0' + port/1000)
+		buf[portStart] = byte('0' + (port/1000)%10)
 		portStart++
-		port %= 1000
 	}
 	if port >= 100 {
-		buf[portStart] = byte('0' + port/100)
+		buf[portStart] = byte('0' + (port/100)%10)
 		portStart++
-		port %= 100
 	}
 	if port >= 10 {
-		buf[portStart] = byte('0' + port/10)
+		buf[portStart] = byte('0' + (port/10)%10)
 		portStart++
-		port %= 10
 	}
-	buf[portStart] = byte('0' + port)
+	buf[portStart] = byte('0' + port%10)
 	return string(buf[:portStart+1])
 }
 

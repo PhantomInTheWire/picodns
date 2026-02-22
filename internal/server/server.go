@@ -14,16 +14,17 @@ import (
 )
 
 type Server struct {
-	cfg            config.Config
-	logger         *slog.Logger
-	resolver       types.Resolver
-	bufPool        *pool.Bytes
-	jobQueue       chan queryJob
-	TotalQueries   atomic.Uint64
-	DroppedPackets atomic.Uint64
-	HandlerErrors  atomic.Uint64
-	WriteErrors    atomic.Uint64
-	logServfail    bool
+	cfg              config.Config
+	logger           *slog.Logger
+	resolver         types.Resolver
+	bufPool          *pool.Bytes
+	jobQueue         chan queryJob
+	TotalQueries     atomic.Uint64
+	DroppedPackets   atomic.Uint64
+	DroppedResponses atomic.Uint64
+	HandlerErrors    atomic.Uint64
+	WriteErrors      atomic.Uint64
+	logServfail      bool
 
 	cacheCounters func() (hits uint64, miss uint64)
 }

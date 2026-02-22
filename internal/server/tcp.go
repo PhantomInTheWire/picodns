@@ -12,8 +12,12 @@ import (
 func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
+	// Per-connection context so the goroutine exits when handler returns
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	go func() {
-		<-ctx.Done()
+		<-connCtx.Done()
 		_ = conn.Close()
 	}()
 

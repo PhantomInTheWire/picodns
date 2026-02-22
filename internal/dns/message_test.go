@@ -64,96 +64,102 @@ func TestReadMessage(t *testing.T) {
 func TestIsValidRequest(t *testing.T) {
 	tests := []struct {
 		name  string
-		setup func([]byte) int
+		setup func(*testing.T, []byte) int
 		want  bool
 	}{
 		{
 			name: "valid request",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
-				n, _ := WriteQuestion(buf, HeaderLen, q)
+				n, err := WriteQuestion(buf, HeaderLen, q)
+				require.NoError(t, err)
 				return n
 			},
 			want: true,
 		},
 		{
 			name: "too short for header",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				return 5
 			},
 			want: false,
 		},
 		{
 			name: "response instead of query",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: FlagQR | 0x0100, QDCount: 1}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
-				n, _ := WriteQuestion(buf, HeaderLen, q)
+				n, err := WriteQuestion(buf, HeaderLen, q)
+				require.NoError(t, err)
 				return n
 			},
 			want: false,
 		},
 		{
 			name: "zero questions",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 0}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				return HeaderLen
 			},
 			want: false,
 		},
 		{
 			name: "multiple questions",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 2}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
-				n, _ := WriteQuestion(buf, HeaderLen, q)
+				n, err := WriteQuestion(buf, HeaderLen, q)
+				require.NoError(t, err)
 				return n
 			},
 			want: true,
 		},
 		{
 			name: "has answers",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1, ANCount: 1}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
-				n, _ := WriteQuestion(buf, HeaderLen, q)
+				n, err := WriteQuestion(buf, HeaderLen, q)
+				require.NoError(t, err)
 				return n
 			},
 			want: true,
 		},
 		{
 			name: "has authorities",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1, NSCount: 1}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
-				n, _ := WriteQuestion(buf, HeaderLen, q)
+				n, err := WriteQuestion(buf, HeaderLen, q)
+				require.NoError(t, err)
 				return n
 			},
 			want: true,
 		},
 		{
 			name: "non-zero opcode",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x2800, QDCount: 1} // Opcode 1 (inverse query)
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				q := Question{Name: "example.com", Type: TypeA, Class: ClassIN}
-				n, _ := WriteQuestion(buf, HeaderLen, q)
+				n, err := WriteQuestion(buf, HeaderLen, q)
+				require.NoError(t, err)
 				return n
 			},
 			want: true,
 		},
 		{
 			name: "truncated question name",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				// Write incomplete name - just a label length byte
 				buf[HeaderLen] = 10
 				return HeaderLen + 1
@@ -162,11 +168,12 @@ func TestIsValidRequest(t *testing.T) {
 		},
 		{
 			name: "missing qtype and qclass",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				q := Question{Name: "x", Type: TypeA, Class: ClassIN}
-				n, _ := WriteQuestion(buf, HeaderLen, q)
+				n, err := WriteQuestion(buf, HeaderLen, q)
+				require.NoError(t, err)
 				// Remove the 4 bytes for qtype and qclass
 				return n - 2
 			},
@@ -174,9 +181,9 @@ func TestIsValidRequest(t *testing.T) {
 		},
 		{
 			name: "invalid first byte",
-			setup: func(buf []byte) int {
+			setup: func(t *testing.T, buf []byte) int {
 				h := Header{ID: 0x1234, Flags: 0x0100, QDCount: 1}
-				WriteHeader(buf, h)
+				require.NoError(t, WriteHeader(buf, h))
 				// Put an invalid byte (0x80 - not a valid label length or compression)
 				buf[HeaderLen] = 0x80
 				return HeaderLen + 5
@@ -188,7 +195,7 @@ func TestIsValidRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := make([]byte, 512)
-			n := tt.setup(buf)
+			n := tt.setup(t, buf)
 			got := IsValidRequest(buf[:n])
 			require.Equal(t, tt.want, got)
 		})
