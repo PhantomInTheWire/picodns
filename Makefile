@@ -1,4 +1,4 @@
-.PHONY: test test-e2e test-e2e-network test-race fmt build clean lint run run-recursive bench bench-million
+.PHONY: test test-e2e test-e2e-network test-race fmt build clean lint run run-recursive bench bench-million bench-realistic
 
 test:
 	go test ./...
@@ -40,3 +40,6 @@ bench:
 
 bench-million:
 	./scripts/bench_million.py
+
+bench-realistic:
+	./scripts/bench_realistic.py

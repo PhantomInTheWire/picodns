@@ -34,12 +34,13 @@ class BenchmarkRunnerBase:
     def __init__(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
         self.duration = int(os.getenv("DURATION", "10"))
-        self.qps = int(os.getenv("QPS", "50000"))
+        self.qps = int(os.getenv("QPS", "30000"))
         self.udp_sockets = int(os.getenv("UDP_SOCKETS", "4"))
         self.query_file = Path(os.getenv("QUERY_FILE", self.root_dir / "queries.txt"))
         self.start_delay = int(os.getenv("START_DELAY", "2"))
         self.warmup_duration = int(os.getenv("WARMUP_DURATION", "2"))
         self.warmup_qps = int(os.getenv("WARMUP_QPS", "2000"))
+        self.max_outstanding = int(os.getenv("MAX_OUTSTANDING", "1000"))
 
         self._run_id = uuid.uuid4().hex[:8]
         port_env = os.getenv("PORT", "")
@@ -92,6 +93,8 @@ class BenchmarkRunnerBase:
             str(duration),
             "-Q",
             str(qps),
+            "-q",
+            str(self.max_outstanding),
         ]
 
         if warmup:

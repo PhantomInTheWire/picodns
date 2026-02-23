@@ -30,13 +30,13 @@ var commonTLDs = []string{
 // Recursive resolver constants
 const (
 	maxRecursionDepth = 32
-	defaultTimeout    = 1000 * time.Millisecond
+	defaultTimeout    = 1500 * time.Millisecond
 
 	// ConnPoolIdleTimeout is how long idle connections are kept in the pool
 	ConnPoolIdleTimeout = 30 * time.Second
 
 	// ConnPoolMaxConns is the maximum number of connections in the pool
-	ConnPoolMaxConns = 64
+	ConnPoolMaxConns = 128
 
 	// Prefetch settings
 	prefetchThreshold      = 2                // Minimum cache hits before considering prefetch
@@ -54,7 +54,7 @@ const (
 	unknownStaggerRTT  = 0 * time.Millisecond   // Stagger RTT baseline when no RTT sample exists
 	queryTimeoutMul    = 4                      // Per-hop timeout = RTT * mul
 	minQueryTimeout    = 80 * time.Millisecond  // Lower bound for per-hop timeout
-	maxQueryTimeout    = 500 * time.Millisecond // Upper bound for per-hop timeout (tail latency control)
+	maxQueryTimeout    = 800 * time.Millisecond // Upper bound for per-hop timeout (tail latency control)
 	maxTimeoutBackoff  = 5 * time.Second        // Upper bound on timeout backoff
 	baseTimeoutBackoff = 1 * time.Second        // Base backoff for timeouts
 
