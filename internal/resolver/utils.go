@@ -12,6 +12,7 @@ import (
 
 type inflightCall struct {
 	done chan struct{}
+	resp []byte
 	err  error
 }
 

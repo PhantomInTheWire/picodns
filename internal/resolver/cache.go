@@ -301,6 +301,12 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		if call.err != nil {
 			return nil, nil, call.err
 		}
+		if call.resp != nil {
+			respCopy := make([]byte, len(call.resp))
+			copy(respCopy, call.resp)
+			setResponseID(respCopy, reqHeader.ID)
+			return respCopy, nil, nil
+		}
 		return c.upstream.Resolve(ctx, req)
 	}
 	defer c.releaseInflight(key)
@@ -318,6 +324,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 			c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start), "error", err)
 		}
 		call.err = err
+		call.resp = nil
 		return resp, cleanupResp, err
 	}
 
@@ -327,6 +334,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	if vErr != nil {
 		if vErr == dns.ErrIDMismatch || vErr == dns.ErrNotResponse {
 			call.err = vErr
+			call.resp = nil
 			return resp, cleanupResp, vErr
 		}
 		if debugEnabled {
@@ -334,6 +342,13 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 		}
 		call.err = nil
 		setResponseID(resp, reqHeader.ID)
+		if resp != nil {
+			respCopy := make([]byte, len(resp))
+			copy(respCopy, resp)
+			call.resp = respCopy
+		} else {
+			call.resp = nil
+		}
 		return resp, cleanupResp, nil
 	}
 
@@ -348,6 +363,13 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 
 	setRAFlag(resp)
 	setResponseID(resp, reqHeader.ID)
+	if resp != nil {
+		respCopy := make([]byte, len(resp))
+		copy(respCopy, resp)
+		call.resp = respCopy
+	} else {
+		call.resp = nil
+	}
 
 	if debugEnabled {
 		c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start))
