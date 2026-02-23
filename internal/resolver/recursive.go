@@ -61,7 +61,7 @@ func NewRecursive(opts ...Option) *Recursive {
 		logger:          slog.Default(),
 		nsCache:         cache.NewTTL[string, []string](nil),
 		delegationCache: newDelegationCache(),
-		querySem:        make(chan struct{}, 256),
+		querySem:        make(chan struct{}, 1024),
 		inflight:        make(map[uint64]*inflightRecursive),
 	}
 	r.nsCache.MaxLen = maxNSCacheEntries

@@ -30,7 +30,7 @@ var commonTLDs = []string{
 // Recursive resolver constants
 const (
 	maxRecursionDepth = 32
-	defaultTimeout    = 512 * time.Millisecond
+	defaultTimeout    = 1500 * time.Millisecond
 
 	// ConnPoolIdleTimeout is how long idle connections are kept in the pool
 	ConnPoolIdleTimeout = 30 * time.Second
@@ -62,6 +62,10 @@ const (
 	nsResolutionTimeout  = 3 * time.Second       // Timeout for NS name resolution
 	nsResolutionStagger  = 15 * time.Millisecond // Stagger between NS resolution attempts
 	nsCacheTTL           = 5 * time.Minute       // TTL for cached NS name resolutions
+
+	// Negative/failure caching
+	negativeFallbackTTL = 60 * time.Second // Used when NXDOMAIN lacks SOA (best-effort)
+	servfailCacheTTL    = 60 * time.Second // Cache SERVFAIL to dampen retry storms
 
 	// Cache bounds (best-effort eviction)
 	maxNSCacheEntries         = 4096

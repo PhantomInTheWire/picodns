@@ -320,6 +320,25 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 	segUp()
 
 	if err != nil {
+		// If upstream fails, return a minimal SERVFAIL and cache it briefly.
+		// This reduces repeated expensive recursion for persistent failures.
+		if cleanupResp != nil {
+			cleanupResp()
+			cleanupResp = nil
+		}
+		if sf, ok := servfailFromRequest(req); ok {
+			call.err = nil
+			if sf != nil {
+				sfCopy := make([]byte, len(sf))
+				copy(sfCopy, sf)
+				call.resp = sfCopy
+			} else {
+				call.resp = nil
+			}
+			c.setCache(q, sf, servfailCacheTTL)
+			return sf, nil, nil
+		}
+
 		if debugEnabled {
 			c.logger.Debug("dns cache miss", "name", q.Name, "type", q.Type, "duration", time.Since(start), "error", err)
 		}

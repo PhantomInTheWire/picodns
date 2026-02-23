@@ -67,6 +67,35 @@ func cleanupBoth(msg *dns.Message, cleanup func()) {
 	}
 }
 
+// servfailFromRequest builds a minimal SERVFAIL response from a request.
+// The returned slice is a new allocation and includes the original question.
+func servfailFromRequest(req []byte) ([]byte, bool) {
+	hdr, err := dns.ReadHeader(req)
+	if err != nil || hdr.QDCount == 0 {
+		return nil, false
+	}
+	nameEnd, err := dns.SkipName(req, dns.HeaderLen)
+	if err != nil {
+		return nil, false
+	}
+	qEnd := nameEnd + 4 // qtype + qclass
+	if qEnd > len(req) {
+		return nil, false
+	}
+
+	resp := make([]byte, qEnd)
+	copy(resp, req[:qEnd])
+
+	hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & 0x000F)
+	hdr.QDCount = 1
+	hdr.ANCount = 0
+	hdr.NSCount = 0
+	hdr.ARCount = 0
+	_ = dns.WriteHeader(resp, hdr)
+
+	return resp, true
+}
+
 func sleepOrDone(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		select {
@@ -103,7 +132,14 @@ func cacheTTLForResponse(fullResp []byte, msg dns.Message, q dns.Question) (time
 		if hasSOA && soaTTL > 0 {
 			return soaTTL, true
 		}
-		return 0, false
+		// Some broken/middlebox NXDOMAIN responses omit SOA. Cache briefly anyway
+		// so repeated NX queries don't force recursion each time.
+		return negativeFallbackTTL, true
+	}
+	if rcode == dns.RcodeServer {
+		// SERVFAIL is not normally cached, but a short TTL helps under load by
+		// avoiding immediate retry storms for the same name/type.
+		return servfailCacheTTL, true
 	}
 	if rcode != dns.RcodeSuccess {
 		return 0, false

@@ -34,7 +34,7 @@ class BenchmarkRunnerBase:
     def __init__(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
         self.duration = int(os.getenv("DURATION", "10"))
-        self.qps = int(os.getenv("QPS", "30000"))
+        self.qps = int(os.getenv("QPS", "50000"))
         self.udp_sockets = int(os.getenv("UDP_SOCKETS", "4"))
         self.query_file = Path(os.getenv("QUERY_FILE", self.root_dir / "queries.txt"))
         self.start_delay = int(os.getenv("START_DELAY", "2"))
@@ -642,6 +642,7 @@ class BenchmarkRunnerBase:
             "-recursive",
             "-listen",
             f"127.0.0.1:{self.port}",
+            "-prewarm=false",
             "-stats",
             "-perf-report",
             str(self.perf_report_path),
