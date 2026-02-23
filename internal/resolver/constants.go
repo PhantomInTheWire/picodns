@@ -54,6 +54,7 @@ const (
 	unknownStaggerRTT  = 0 * time.Millisecond   // Stagger RTT baseline when no RTT sample exists
 	queryTimeoutMul    = 4                      // Per-hop timeout = RTT * mul
 	minQueryTimeout    = 80 * time.Millisecond  // Lower bound for per-hop timeout
+	maxQueryTimeout    = 300 * time.Millisecond // Upper bound for per-hop timeout (tail latency control)
 	maxTimeoutBackoff  = 5 * time.Second        // Upper bound on timeout backoff
 	baseTimeoutBackoff = 1 * time.Second        // Base backoff for timeouts
 
@@ -61,11 +62,12 @@ const (
 	maxConcurrentNSNames = 6                     // Maximum NS names to resolve concurrently
 	nsResolutionTimeout  = 3 * time.Second       // Timeout for NS name resolution
 	nsResolutionStagger  = 15 * time.Millisecond // Stagger between NS resolution attempts
+	nsResolutionBurst    = 3                     // Launch this many NS lookups immediately before staggering
 	nsCacheTTL           = 5 * time.Minute       // TTL for cached NS name resolutions
 
 	// Negative/failure caching
 	negativeFallbackTTL = 60 * time.Second // Used when NXDOMAIN lacks SOA (best-effort)
-	servfailCacheTTL    = 60 * time.Second // Cache SERVFAIL to dampen retry storms
+	servfailCacheTTL    = 2 * time.Second  // Cache SERVFAIL briefly to dampen retry storms
 
 	// Cache bounds (best-effort eviction)
 	maxNSCacheEntries         = 4096

@@ -324,9 +324,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					rtt = unknownRTT
 				}
 				qTimeout := rtt * queryTimeoutMul
-				if qTimeout < minQueryTimeout {
-					qTimeout = minQueryTimeout
-				}
+				qTimeout = min(maxQueryTimeout, max(minQueryTimeout, qTimeout))
 				select {
 				case r.querySem <- struct{}{}:
 					defer func() { <-r.querySem }()
@@ -614,11 +612,18 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	errorCount := atomic.Uint32{}
 
 	for i, nsName := range uncachedNames {
-		if i > 0 && !sleepOrDone(nsCtx, nsResolutionStagger) {
+		if i >= maxConcurrentNSNames {
 			break
 		}
-		if resolvedCount.Load() >= 1 {
-			break
+		// Launch a small burst immediately to avoid tail latency from serial NS
+		// hostname resolution (glue-less referrals). Then stagger additional lookups.
+		if i >= nsResolutionBurst {
+			if resolvedCount.Load() >= 1 {
+				break
+			}
+			if !sleepOrDone(nsCtx, nsResolutionStagger) {
+				break
+			}
 		}
 
 		wg.Add(1)
@@ -669,9 +674,6 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 			}
 			cleanupBoth(respMsg, cleanup)
 		}(nsName)
-		if i+1 >= maxConcurrentNSNames {
-			break
-		}
 	}
 	go func() {
 		wg.Wait()
