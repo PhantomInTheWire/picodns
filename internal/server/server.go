@@ -74,6 +74,7 @@ func (s *Server) Start(ctx context.Context) error {
 		for _, w := range udpWriters {
 			if w != nil {
 				close(w.ch)
+				close(w.slowCh)
 			}
 		}
 		writersWg.Wait()

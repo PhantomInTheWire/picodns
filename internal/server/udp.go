@@ -39,7 +39,10 @@ type queryJob struct {
 
 type udpWriter struct {
 	conn net.PacketConn
-	ch   chan udpWrite
+	// ch is the high-priority write channel (cache-hit fast path).
+	ch chan udpWrite
+	// slowCh is the low-priority write channel (worker/miss path).
+	slowCh chan udpWrite
 }
 
 type udpWrite struct {
@@ -73,8 +76,34 @@ func (s *Server) udpWriteLoop(writer *udpWriter) {
 		}
 	}
 
-	for item := range writer.ch {
-		flushItem(item)
+	fastCh := writer.ch
+	slowCh := writer.slowCh
+	for fastCh != nil || slowCh != nil {
+		select {
+		case item, ok := <-fastCh:
+			if !ok {
+				fastCh = nil
+				continue
+			}
+			flushItem(item)
+			continue
+		default:
+		}
+
+		select {
+		case item, ok := <-fastCh:
+			if !ok {
+				fastCh = nil
+				continue
+			}
+			flushItem(item)
+		case item, ok := <-slowCh:
+			if !ok {
+				slowCh = nil
+				continue
+			}
+			flushItem(item)
+		}
 	}
 }
 
@@ -148,18 +177,21 @@ func (s *Server) udpReadLoop(ctx context.Context, writer *udpWriter, cacheResolv
 		// Hard separation: hits never queue behind misses.
 		if cacheResolver != nil {
 			if resp, cleanup, ok := cacheResolver.ResolveFromCache(ctx, b[:n]); ok {
-				// Direct write from reader goroutine - fastest path.
-				// No channel, no queuing, no blocking.
-				if s.logServfail {
-					s.maybeLogServfail(resp, addr)
+				select {
+				case writer.ch <- udpWrite{resp: resp, addr: addr, cleanup: cleanup, bufPtr: bufPtr}:
+				default:
+					// Backpressure: fall back to direct write to avoid dropping cache hits.
+					if s.logServfail {
+						s.maybeLogServfail(resp, addr)
+					}
+					if _, err := writer.conn.WriteTo(resp, addr); err != nil {
+						s.WriteErrors.Add(1)
+					}
+					if cleanup != nil {
+						cleanup()
+					}
+					s.bufPool.Put(bufPtr)
 				}
-				if _, err := writer.conn.WriteTo(resp, addr); err != nil {
-					s.WriteErrors.Add(1)
-				}
-				if cleanup != nil {
-					cleanup()
-				}
-				s.bufPool.Put(bufPtr)
 				continue
 			}
 		}
@@ -193,7 +225,7 @@ func (s *Server) worker(ctx context.Context) {
 			if job.writer != nil {
 				if sf, ok := servfailFromRequestInPlace((*job.dataPtr)[:job.n]); ok {
 					select {
-					case job.writer.ch <- udpWrite{resp: sf, addr: job.addr, cleanup: nil, bufPtr: job.dataPtr}:
+					case job.writer.slowCh <- udpWrite{resp: sf, addr: job.addr, cleanup: nil, bufPtr: job.dataPtr}:
 						continue
 					default:
 						// Fall through to release buffer.
@@ -213,7 +245,7 @@ func (s *Server) worker(ctx context.Context) {
 		// Send write to per-socket writer to avoid concurrent writes on the same conn.
 		if job.writer != nil {
 			select {
-			case job.writer.ch <- udpWrite{resp: resp, addr: job.addr, cleanup: cleanup, bufPtr: job.dataPtr}:
+			case job.writer.slowCh <- udpWrite{resp: resp, addr: job.addr, cleanup: cleanup, bufPtr: job.dataPtr}:
 			default:
 				// Backpressure: drop response but release resources.
 				s.DroppedResponses.Add(1)

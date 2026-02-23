@@ -5,10 +5,11 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
-import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,21 +23,44 @@ from rich.table import Table
 console = Console()
 
 
+def _find_free_port() -> int:
+    """Find a free port by binding to port 0 and letting the OS assign one."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 class BenchmarkRunnerBase:
     def __init__(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
         self.duration = int(os.getenv("DURATION", "10"))
         self.qps = int(os.getenv("QPS", "30000"))
-        self.port = int(os.getenv("PORT", "1053"))
         self.udp_sockets = int(os.getenv("UDP_SOCKETS", "4"))
         self.query_file = Path(os.getenv("QUERY_FILE", self.root_dir / "queries.txt"))
-        self.perf_report_path = Path(
-            os.getenv("PERF_REPORT_PATH", self.root_dir / "perf" / "picodns-perf.json")
-        )
-        self.knot_port = int(os.getenv("KNOT_PORT", "1054"))
         self.start_delay = int(os.getenv("START_DELAY", "2"))
         self.warmup_duration = int(os.getenv("WARMUP_DURATION", "2"))
         self.warmup_qps = int(os.getenv("WARMUP_QPS", "2000"))
+
+        self._run_id = uuid.uuid4().hex[:8]
+        port_env = os.getenv("PORT", "")
+        if port_env:
+            self.port = int(port_env)
+        else:
+            self.port = _find_free_port()
+        knot_port_env = os.getenv("KNOT_PORT", "")
+        if knot_port_env:
+            self.knot_port = int(knot_port_env)
+        else:
+            self.knot_port = _find_free_port()
+
+        self._log_file = Path(f"/tmp/picodns-{self._run_id}.log")
+        self._kresd_log_file = Path(f"/tmp/kresd-{self._run_id}.log")
+        self.perf_report_path = Path(
+            os.getenv(
+                "PERF_REPORT_PATH",
+                self.root_dir / "perf" / f"picodns-perf-{self._run_id}.json",
+            )
+        )
 
         self.picodns_pid: Optional[int] = None
         self.kresd_pid: Optional[int] = None
@@ -517,9 +541,8 @@ class BenchmarkRunnerBase:
         if self.perf_report_path.exists():
             self.perf_report_path.unlink()
 
-        log_file = Path("/tmp/picodns.log")
-        if log_file.exists():
-            log_file.write_text("")
+        if self._log_file.exists():
+            self._log_file.write_text("")
 
         cmd = [
             str(self.root_dir / "bin" / "picodns"),
@@ -535,7 +558,7 @@ class BenchmarkRunnerBase:
         if log_level:
             cmd.extend(["-log-level", log_level])
 
-        with open("/tmp/picodns.log", "w") as log:
+        with open(self._log_file, "w") as log:
             proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
             self.picodns_pid = proc.pid
 
@@ -545,7 +568,7 @@ class BenchmarkRunnerBase:
             os.kill(self.picodns_pid, 0)
         except ProcessLookupError:
             console.print(
-                "[bright_red]Error:[/] PicoDNS failed to start. Check /tmp/picodns.log",
+                f"[bright_red]Error:[/] PicoDNS failed to start. Check {self._log_file}",
                 style="red",
             )
             return False
@@ -563,7 +586,7 @@ class BenchmarkRunnerBase:
             f"net.listen('127.0.0.1', {self.knot_port})\ncache.size = 100 * MB\n"
         )
 
-        with open("/tmp/kresd.log", "w") as log:
+        with open(self._kresd_log_file, "w") as log:
             proc = subprocess.Popen(
                 ["kresd", "-n", "-q", "-c", "config", str(self.kresd_dir)],
                 stdout=log,
@@ -578,7 +601,7 @@ class BenchmarkRunnerBase:
             os.kill(self.kresd_pid, 0)
         except ProcessLookupError:
             console.print(
-                "[yellow]Warning:[/] kresd failed to start. Check /tmp/kresd.log",
+                f"[yellow]Warning:[/] kresd failed to start. Check {self._kresd_log_file}",
                 style="yellow",
             )
             self.kresd_dir = None
@@ -609,7 +632,7 @@ class BenchmarkRunnerBase:
             _, self.pico_result = self._run_dnsperf(self.port, self.duration, self.qps)
 
             self._cleanup()
-            self.pico_stats = self._parse_json_logs(Path("/tmp/picodns.log"))
+            self.pico_stats = self._parse_json_logs(self._log_file)
 
             console.print(f"\n[bright_yellow bold]== Knot Resolver (local) ==[/]")
             if self._start_knot():

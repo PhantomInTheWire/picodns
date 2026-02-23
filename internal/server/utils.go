@@ -55,7 +55,11 @@ func (s *Server) startUDPListener(ctx context.Context, addr string, cacheResolve
 	if err != nil {
 		return err
 	}
-	w := &udpWriter{conn: conn, ch: make(chan udpWrite, s.cfg.Workers)}
+	w := &udpWriter{
+		conn:   conn,
+		ch:     make(chan udpWrite, s.cfg.Workers),
+		slowCh: make(chan udpWrite, s.cfg.Workers),
+	}
 	if udpWriters != nil {
 		*udpWriters = append(*udpWriters, w)
 	}
