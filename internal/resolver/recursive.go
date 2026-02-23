@@ -521,6 +521,10 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 					minTTL = auth.TTL
 				}
 			}
+			childZone = dns.NormalizeName(childZone)
+			if childZone == "" {
+				childZone = zone
+			}
 
 			bailiwickZone := zone
 			if zone != "." {
@@ -576,6 +580,10 @@ func (r *Recursive) resolveNSNames(ctx context.Context, nsNames []string, depth 
 	var cachedIPs []string
 	var uncachedNames []string
 	for _, nsName := range nsNames {
+		nsName = dns.NormalizeName(nsName)
+		if nsName == "" {
+			continue
+		}
 		if cached, ok := r.nsCache.Get(nsName); ok {
 			cachedIPs = append(cachedIPs, cached...)
 		} else {

@@ -261,7 +261,10 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 			}
 			nsName := dns.ExtractNameFromData(fullMsg, rr.DataOffset)
 			if nsName != "" {
-				nsNames = append(nsNames, nsName)
+				nsNameNorm := dns.NormalizeName(nsName)
+				if nsNameNorm != "" {
+					nsNames = append(nsNames, nsNameNorm)
+				}
 			}
 		}
 	}
@@ -273,8 +276,7 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 		}
 	}
 	var glueIPs []string
-	for _, nsName := range nsNames {
-		nsNameNorm := dns.NormalizeName(nsName)
+	for _, nsNameNorm := range nsNames {
 		if zoneNorm != "" {
 			if !dns.IsSubdomain(nsNameNorm, zoneNorm) {
 				continue
