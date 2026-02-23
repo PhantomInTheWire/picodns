@@ -335,7 +335,8 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 			} else {
 				call.resp = nil
 			}
-			c.setCache(q, sf, servfailCacheTTL)
+			ttl := servfailCacheTTL
+			c.setCache(q, sf, ttl)
 			return sf, nil, nil
 		}
 
@@ -356,7 +357,20 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 			call.resp = nil
 			return resp, cleanupResp, vErr
 		}
-		if debugEnabled {
+		// ErrQDMismatch is expected when the recursive resolver followed a
+		// CNAME chain: the response question section contains the CNAME target
+		// instead of the original query name.  The answer is still valid, so
+		// cache it under the original question key.
+		if vErr == dns.ErrQDMismatch {
+			segSet := c.tracers.resolveCacheSet.TraceNested(sampled)
+			if respMsg, parseErr := dns.ReadMessagePooled(resp); parseErr == nil {
+				if ttl, ok := cacheTTLForResponse(resp, *respMsg, q); ok {
+					c.setCache(q, resp, ttl)
+				}
+				respMsg.Release()
+			}
+			segSet()
+		} else if debugEnabled {
 			c.logger.Debug("dns response validation mismatch; skip cache", "name", q.Name, "type", q.Type, "error", vErr)
 		}
 		call.err = nil

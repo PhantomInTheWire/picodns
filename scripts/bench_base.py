@@ -579,18 +579,40 @@ class BenchmarkRunnerBase:
                         f"  PicoDNS is [bright_red]{1 / ratio:.2f}x slower[/] than Knot Resolver"
                     )
 
-            p_lat = self.pico_result.get("avg_latency", 0) * 1000
-            k_lat = self.knot_result.get("avg_latency", 0) * 1000
-            if k_lat > 0:
-                lat_diff = ((k_lat - p_lat) / k_lat) * 100
-                if lat_diff > 0:
+            p_avg = self.pico_result.get("avg_latency", 0) * 1000
+            k_avg = self.knot_result.get("avg_latency", 0) * 1000
+            if k_avg > 0:
+                avg_diff = ((k_avg - p_avg) / k_avg) * 100
+                if avg_diff > 0:
                     console.print(
-                        f"  PicoDNS has [bright_green]{lat_diff:.1f}% lower latency[/]"
+                        f"  Avg latency:  [bright_green]{avg_diff:.1f}% lower[/] ({p_avg:.3f}ms vs {k_avg:.3f}ms)"
                     )
                 else:
                     console.print(
-                        f"  PicoDNS has [bright_red]{abs(lat_diff):.1f}% higher latency[/]"
+                        f"  Avg latency:  [bright_red]{abs(avg_diff):.1f}% higher[/] ({p_avg:.3f}ms vs {k_avg:.3f}ms)"
                     )
+
+            p_max = self.pico_result.get("max_latency", 0) * 1000
+            k_max = self.knot_result.get("max_latency", 0) * 1000
+            if k_max > 0:
+                max_diff = ((k_max - p_max) / k_max) * 100
+                if max_diff > 0:
+                    console.print(
+                        f"  Max latency:  [bright_green]{max_diff:.1f}% lower[/] ({p_max:.3f}ms vs {k_max:.3f}ms)"
+                    )
+                else:
+                    console.print(
+                        f"  Max latency:  [bright_red]{abs(max_diff):.1f}% higher[/] ({p_max:.3f}ms vs {k_max:.3f}ms)"
+                    )
+
+            p_lost = self.pico_result.get("queries_lost", 0)
+            k_lost = self.knot_result.get("queries_lost", 0)
+            if p_lost == 0 and k_lost > 0:
+                console.print(f"  Queries lost: [bright_green]0 vs {k_lost}[/]")
+            elif p_lost > 0 and k_lost == 0:
+                console.print(f"  Queries lost: [bright_red]{p_lost} vs 0[/]")
+            elif p_lost > 0 or k_lost > 0:
+                console.print(f"  Queries lost: {p_lost} vs {k_lost}")
 
     def _cleanup(self):
         if self.picodns_pid:

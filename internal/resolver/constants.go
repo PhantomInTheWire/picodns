@@ -30,7 +30,7 @@ var commonTLDs = []string{
 // Recursive resolver constants
 const (
 	maxRecursionDepth = 32
-	defaultTimeout    = 1500 * time.Millisecond
+	defaultTimeout    = 1000 * time.Millisecond
 
 	// ConnPoolIdleTimeout is how long idle connections are kept in the pool
 	ConnPoolIdleTimeout = 30 * time.Second
@@ -50,24 +50,24 @@ const (
 	minStaggerDelay    = 0 * time.Millisecond   // Minimum stagger between concurrent queries
 	maxStaggerDelay    = 20 * time.Millisecond  // Maximum stagger between concurrent queries
 	rttMultiplier      = 7                      // RTT multiplier for stagger (7/10 = 0.7x)
-	unknownRTT         = 500 * time.Millisecond // RTT used for servers with no prior samples
+	unknownRTT         = 250 * time.Millisecond // RTT used for servers with no prior samples
 	unknownStaggerRTT  = 0 * time.Millisecond   // Stagger RTT baseline when no RTT sample exists
 	queryTimeoutMul    = 4                      // Per-hop timeout = RTT * mul
 	minQueryTimeout    = 80 * time.Millisecond  // Lower bound for per-hop timeout
-	maxQueryTimeout    = 300 * time.Millisecond // Upper bound for per-hop timeout (tail latency control)
+	maxQueryTimeout    = 500 * time.Millisecond // Upper bound for per-hop timeout (tail latency control)
 	maxTimeoutBackoff  = 5 * time.Second        // Upper bound on timeout backoff
 	baseTimeoutBackoff = 1 * time.Second        // Base backoff for timeouts
 
 	// NS resolution settings
 	maxConcurrentNSNames = 6                     // Maximum NS names to resolve concurrently
-	nsResolutionTimeout  = 3 * time.Second       // Timeout for NS name resolution
+	nsResolutionTimeout  = 2 * time.Second       // Timeout for NS name resolution
 	nsResolutionStagger  = 15 * time.Millisecond // Stagger between NS resolution attempts
 	nsResolutionBurst    = 3                     // Launch this many NS lookups immediately before staggering
 	nsCacheTTL           = 5 * time.Minute       // TTL for cached NS name resolutions
 
 	// Negative/failure caching
 	negativeFallbackTTL = 60 * time.Second // Used when NXDOMAIN lacks SOA (best-effort)
-	servfailCacheTTL    = 2 * time.Second  // Cache SERVFAIL briefly to dampen retry storms
+	servfailCacheTTL    = 1 * time.Second  // Cache SERVFAIL briefly to dampen retry storms
 
 	// Cache bounds (best-effort eviction)
 	maxNSCacheEntries         = 4096
