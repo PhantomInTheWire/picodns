@@ -542,11 +542,9 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			if len(glueIPs) > 0 {
 				// Populate nsCache from glue so subsequent glue-less referrals can avoid
 				// extra A lookups for the same NS names.
-				if glueByNS != nil {
-					for nsName, ips := range glueByNS {
-						if len(ips) > 0 {
-							r.nsCache.Set(nsName, ips, nsCacheTTL)
-						}
+				for nsName, ips := range glueByNS {
+					if len(ips) > 0 {
+						r.nsCache.Set(nsName, ips, nsCacheTTL)
 					}
 				}
 				servers = glueIPs
