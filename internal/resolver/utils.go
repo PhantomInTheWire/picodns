@@ -248,7 +248,12 @@ func minimizeAndSetID(resp []byte, clientID uint16, keepAuthorities bool) ([]byt
 
 // extractReferral extracts nameserver names and their associated glue record IPs from a DNS message.
 // It validates that NS records are in-bailiwick to prevent cache poisoning.
-func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []string) {
+//
+// Returns:
+// - nsNames: normalized NS names from the authority section
+// - glueIPs: flattened list of "ip:53" for in-bailiwick glue A records
+// - glueByNS: map of NS name -> []"ip:53" for in-bailiwick glue
+func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []string, map[string][]string) {
 	var nsNames []string
 	nsIPs := make(map[string][]string)
 	zoneNorm := dns.NormalizeName(zone)
@@ -277,6 +282,7 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 		}
 	}
 	var glueIPs []string
+	glueByNS := make(map[string][]string)
 	for _, nsNameNorm := range nsNames {
 		if zoneNorm != "" {
 			if !dns.IsSubdomain(nsNameNorm, zoneNorm) {
@@ -285,7 +291,11 @@ func extractReferral(fullMsg []byte, msg dns.Message, zone string) ([]string, []
 		}
 		if ips, ok := nsIPs[nsNameNorm]; ok {
 			glueIPs = append(glueIPs, ips...)
+			glueByNS[nsNameNorm] = append(glueByNS[nsNameNorm], ips...)
 		}
 	}
-	return nsNames, glueIPs
+	if len(glueByNS) == 0 {
+		glueByNS = nil
+	}
+	return nsNames, glueIPs, glueByNS
 }

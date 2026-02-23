@@ -531,7 +531,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 				bailiwickZone = childZone
 			}
 			segRef := r.tracers.iterReferral.TraceNested(sampled)
-			nsServers, glueIPs := extractReferral(resp, *respMsg, bailiwickZone)
+			nsServers, glueIPs, glueByNS := extractReferral(resp, *respMsg, bailiwickZone)
 			segRef()
 			respMsg.Release()
 			if len(nsServers) == 0 {
@@ -540,6 +540,15 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			}
 
 			if len(glueIPs) > 0 {
+				// Populate nsCache from glue so subsequent glue-less referrals can avoid
+				// extra A lookups for the same NS names.
+				if glueByNS != nil {
+					for nsName, ips := range glueByNS {
+						if len(ips) > 0 {
+							r.nsCache.Set(nsName, ips, nsCacheTTL)
+						}
+					}
+				}
 				servers = glueIPs
 				r.delegationCache.Set(childZone, glueIPs, time.Duration(minTTL)*time.Second)
 				cleanupBoth(nil, cleanup)

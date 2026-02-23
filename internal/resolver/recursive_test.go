@@ -21,7 +21,7 @@ func TestExtractReferral_InBailiwick(t *testing.T) {
 	require.NoError(t, err)
 	defer msg.Release()
 
-	nsNames, glueIPs := extractReferral(buf, *msg, "example.com")
+	nsNames, glueIPs, _ := extractReferral(buf, *msg, "example.com")
 
 	require.Len(t, nsNames, 1)
 	require.Equal(t, "ns1.example.com", nsNames[0])
@@ -40,7 +40,7 @@ func TestExtractReferral_OutOfBailiwick(t *testing.T) {
 	require.NoError(t, err)
 	defer msg.Release()
 
-	nsNames, glueIPs := extractReferral(buf, *msg, "example.com")
+	nsNames, glueIPs, _ := extractReferral(buf, *msg, "example.com")
 
 	require.Len(t, nsNames, 1)
 	require.Equal(t, "ns.evil.com", nsNames[0])
