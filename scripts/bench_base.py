@@ -280,54 +280,118 @@ class BenchmarkRunnerBase:
 
         self._print_subheader("Function Performance Profile", "bright_cyan")
 
-        total_runtime_ns = data.get("total_runtime_ns", 0)
-        total_calls = data.get("total_calls", 0)
+        version = int(data.get("version", 1) or 1)
+        wall_time_ns = int(
+            data.get("wall_time_ns", data.get("total_runtime_ns", 0) or 0) or 0
+        )
+        total_calls = int(data.get("total_calls", 0) or 0)
+        sampled_calls = int(data.get("sampled_calls", 0) or 0)
 
-        console.print(f"  Total Runtime: {self._format_duration(total_runtime_ns)}")
+        sample_rate = int(data.get("sample_rate", 0) or 0)
+        warmup_samples = int(data.get("warmup_samples", 0) or 0)
+
+        label = "Wall Time" if version >= 2 else "Total Runtime"
+        console.print(f"  {label}: {self._format_duration(wall_time_ns)}")
         console.print(f"  Total Calls: {total_calls:,}")
-        console.print(f"  Sampled Calls: {data.get('sampled_calls', 0):,}")
+        console.print(f"  Sampled Calls: {sampled_calls:,}")
+        if version >= 2 and sample_rate:
+            console.print(
+                f"  Sample Rate: 1/{sample_rate} | Warmup Samples/Func: {warmup_samples}"
+            )
+        if version >= 2:
+            console.print(
+                "  Note: times are aggregate (sum across calls); they are not CPU time and can exceed wall time under concurrency/IO waits"
+            )
         console.print()
 
         functions = data.get("functions", [])
         if not functions:
             return
 
-        # Sort by depth ascending, then by total time descending
-        functions = sorted(
-            functions, key=lambda f: (f.get("depth", 0), -f.get("total_ns", 0))
-        )
+        by_name = {f.get("name"): f for f in functions if f.get("name")}
+
+        def _ns(func: Dict[str, Any], key: str, fallback: int = 0) -> int:
+            try:
+                return int(func.get(key, fallback) or 0)
+            except Exception:
+                return fallback
+
+        def _sampled_total_ns(func: Dict[str, Any]) -> int:
+            return _ns(func, "sampled_total_ns", _ns(func, "total_ns", 0))
+
+        # Build a stable call tree using explicit parent links (v2).
+        children: Dict[str, List[Dict[str, Any]]] = {}
+        roots: List[Dict[str, Any]] = []
+        if version >= 2:
+            for f in functions:
+                name = (f.get("name") or "").strip()
+                if not name:
+                    continue
+                parent = (f.get("parent") or "").strip()
+                if parent:
+                    children.setdefault(parent, []).append(f)
+                else:
+                    roots.append(f)
+            for k in list(children.keys()):
+                children[k].sort(key=lambda x: -_sampled_total_ns(x))
+            roots.sort(key=lambda x: -_sampled_total_ns(x))
+        else:
+            # v1 has only a depth heuristic.
+            functions = sorted(
+                functions,
+                key=lambda f: (int(f.get("depth", 0) or 0), -_ns(f, "total_ns", 0)),
+            )
 
         table = Table(
             box=box.ROUNDED, show_header=True, header_style="bold", expand=True
         )
         table.add_column("Function", justify="left", no_wrap=True, min_width=35)
         table.add_column("Calls", justify="right", min_width=8)
-        table.add_column("Total", justify="right", min_width=8)
+        table.add_column("Sampled", justify="right", min_width=8)
+        table.add_column("Sampled Total", justify="right", min_width=12)
         table.add_column("Avg", justify="right", min_width=8)
         table.add_column("Max", justify="right", min_width=8)
-        table.add_column("%", justify="right", min_width=6)
+        table.add_column("%Parent", justify="right", min_width=8)
 
-        for i, func in enumerate(functions):
-            name = func.get("name", "unknown")
-            calls = func.get("calls", 0)
-            total_ns = func.get("total_ns", 0)
-            avg_ns = func.get("avg_ns", 0)
-            max_ns = func.get("max_ns", 0)
-            depth = func.get("depth", 0)
-
-            pct = (total_ns / total_runtime_ns * 100) if total_runtime_ns > 0 else 0
-            total_str = self._format_duration(total_ns)
-            avg_str = self._format_duration(avg_ns)
-            max_str = self._format_duration(max_ns)
-
+        def _pct_parent(child: Dict[str, Any]) -> str:
+            if version < 2:
+                return "-"
+            parent_name = (child.get("parent") or "").strip()
+            if not parent_name:
+                return "-"
+            parent = by_name.get(parent_name)
+            if not parent:
+                return "-"
+            # Only show %Parent when it's plausibly nested under the same sampling decision.
+            try:
+                c_s = int(child.get("sampled", 0) or 0)
+                p_s = int(parent.get("sampled", 0) or 0)
+                if c_s <= 0 or p_s <= 0 or c_s > p_s:
+                    return "-"
+            except Exception:
+                return "-"
+            p_total = _sampled_total_ns(parent)
+            c_total = _sampled_total_ns(child)
+            if p_total <= 0 or c_total <= 0:
+                return "-"
+            pct = (c_total / p_total) * 100.0
+            if pct > 1000:
+                return ">1000%"
             if pct > 20:
-                pct_text = f"[bright_red]{pct:5.1f}%[/]"
-            elif pct > 10:
-                pct_text = f"[bright_yellow]{pct:5.1f}%[/]"
-            elif pct > 5:
-                pct_text = f"[bright_green]{pct:5.1f}%[/]"
-            else:
-                pct_text = f"{pct:5.1f}%"
+                return f"[bright_red]{pct:6.1f}%[/]"
+            if pct > 10:
+                return f"[bright_yellow]{pct:6.1f}%[/]"
+            if pct > 5:
+                return f"[bright_green]{pct:6.1f}%[/]"
+            return f"{pct:6.1f}%"
+
+        def _add_row(func: Dict[str, Any], depth: int) -> None:
+            name = (func.get("name") or "unknown").strip() or "unknown"
+            calls = int(func.get("calls", 0) or 0)
+            sampled = int(func.get("sampled", 0) or 0)
+            sampled_total_ns = _sampled_total_ns(func)
+            avg_ns = _ns(func, "avg_ns", 0)
+            max_ns = _ns(func, "max_ns", 0)
 
             prefix = "  " * depth
             if depth > 0:
@@ -335,8 +399,33 @@ class BenchmarkRunnerBase:
             display_name = prefix + name
 
             table.add_row(
-                display_name, f"{calls:,}", total_str, avg_str, max_str, pct_text
+                display_name,
+                f"{calls:,}",
+                f"{sampled:,}",
+                self._format_duration(sampled_total_ns),
+                self._format_duration(avg_ns),
+                self._format_duration(max_ns),
+                _pct_parent(func),
             )
+
+        if version >= 2 and roots:
+
+            def walk(node: Dict[str, Any], depth: int, seen: set) -> None:
+                name = (node.get("name") or "").strip()
+                if not name or name in seen:
+                    return
+                seen.add(name)
+                _add_row(node, depth)
+                for ch in children.get(name, []):
+                    walk(ch, depth + 1, seen)
+
+            seen_names: set = set()
+            for root in roots:
+                walk(root, 0, seen_names)
+        else:
+            for func in functions:
+                depth = int(func.get("depth", 0) or 0)
+                _add_row(func, depth)
 
         console.print(table)
 
@@ -348,10 +437,11 @@ class BenchmarkRunnerBase:
         by_name = {f.get("name"): f for f in funcs if f.get("name")}
 
         def total_ns(name: str) -> int:
-            return int(by_name.get(name, {}).get("total_ns", 0) or 0)
+            f = by_name.get(name, {})
+            return int(f.get("sampled_total_ns", f.get("total_ns", 0) or 0) or 0)
 
-        def calls(name: str) -> int:
-            return int(by_name.get(name, {}).get("calls", 0) or 0)
+        def sampled_calls(name: str) -> int:
+            return int(by_name.get(name, {}).get("sampled", 0) or 0)
 
         def breakdown(title: str, root: str, components: List[str]) -> None:
             root_total = total_ns(root)
@@ -367,14 +457,17 @@ class BenchmarkRunnerBase:
                 box=box.ROUNDED, show_header=True, header_style="bold", expand=True
             )
             t.add_column("Component", justify="left", no_wrap=True)
-            t.add_column("Calls", justify="right")
+            t.add_column("Sampled", justify="right")
             t.add_column("Total", justify="right")
             t.add_column(f"% {root}", justify="right")
 
             for name, ns in comp_totals:
                 pct = (ns / root_total * 100) if root_total > 0 else 0
                 t.add_row(
-                    name, f"{calls(name):,}", self._format_duration(ns), f"{pct:5.1f}%"
+                    name,
+                    f"{sampled_calls(name):,}",
+                    self._format_duration(ns),
+                    f"{pct:5.1f}%",
                 )
 
             pct_other = (other / root_total * 100) if root_total > 0 else 0
