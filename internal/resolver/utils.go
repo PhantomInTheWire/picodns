@@ -97,7 +97,7 @@ func servfailFromRequest(req []byte) ([]byte, bool) {
 	resp := make([]byte, qEnd)
 	copy(resp, req[:qEnd])
 
-	hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & 0x000F)
+	hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & dns.RcodeMask)
 	hdr.QDCount = 1
 	hdr.ANCount = 0
 	hdr.NSCount = 0
@@ -134,7 +134,7 @@ func sleepOrDone(ctx context.Context, d time.Duration) bool {
 // - NXDOMAIN and NOERROR/NODATA negative caching using SOA.MINIMUM (RFC2308-ish).
 // It returns (ttl, true) when cacheable.
 func cacheTTLForResponse(fullResp []byte, msg dns.Message, q dns.Question) (time.Duration, bool) {
-	rcode := msg.Header.Flags & 0x000F
+	rcode := msg.Header.Flags & dns.RcodeMask
 	q = q.Normalize()
 
 	soaTTL, hasSOA := negativeTTLFromSOA(fullResp, msg.Authorities)

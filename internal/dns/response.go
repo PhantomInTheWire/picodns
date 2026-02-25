@@ -80,7 +80,7 @@ func BuildResponse(req []byte, answers []Answer, rcode uint16) ([]byte, error) {
 }
 
 func responseFlags(reqFlags uint16, rcode uint16) uint16 {
-	return FlagQR | (reqFlags & FlagOpcode) | (reqFlags & FlagRD) | FlagRA | (rcode & 0x000F)
+	return FlagQR | (reqFlags & FlagOpcode) | (reqFlags & FlagRD) | FlagRA | (rcode & RcodeMask)
 }
 
 // MinimizeResponse strips authority/additional sections to reduce size.

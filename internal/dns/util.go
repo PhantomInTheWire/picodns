@@ -11,41 +11,6 @@ func NormalizeName(name string) string {
 	return asciiLowerIfNeeded(name)
 }
 
-// JoinLabels joins a slice of domain name labels with dots.
-// Returns "." if the labels slice is empty.
-func JoinLabels(labels []string) string {
-	if len(labels) == 0 {
-		return "."
-	}
-	return strings.Join(labels, ".")
-}
-
-// SplitLabels splits a domain name into its constituent labels.
-// Returns an empty slice for empty names or root (".") names.
-func SplitLabels(name string) []string {
-	if name == "" || name == "." {
-		return nil
-	}
-	name = strings.TrimSuffix(name, ".")
-
-	dotCount := strings.Count(name, ".")
-	labels := make([]string, 0, dotCount+1)
-
-	start := 0
-	for i := 0; i < len(name); i++ {
-		if name[i] == '.' {
-			if i > start {
-				labels = append(labels, name[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(name) {
-		labels = append(labels, name[start:])
-	}
-	return labels
-}
-
 // IsSubdomain checks if child is a subdomain of parent.
 // Both names should be normalized (lowercase, no trailing dot).
 func IsSubdomain(child, parent string) bool {
@@ -160,17 +125,4 @@ func BuildQueryIntoWithEDNS(buf []byte, id uint16, name string, qtype, qclass ui
 	off += 2
 
 	return off, nil
-}
-
-// BuildQuery constructs a DNS query message for the given name, type, and class.
-// It uses a maximum-size buffer to avoid calculation errors, as DNS messages
-// over UDP are limited to 512 bytes per RFC 1035.
-// Returns the serialized query as a byte slice.
-func BuildQuery(id uint16, name string, qtype, qclass uint16) ([]byte, error) {
-	buf := make([]byte, MaxMessageSize)
-	n, err := BuildQueryInto(buf, id, name, qtype, qclass)
-	if err != nil {
-		return nil, err
-	}
-	return buf[:n], nil
 }

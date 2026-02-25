@@ -23,7 +23,7 @@ func (s *Server) maybeLogServfail(resp []byte, addr net.Addr) {
 	if err != nil {
 		return
 	}
-	if (hdr.Flags & 0x000F) != dns.RcodeServer {
+	if (hdr.Flags & dns.RcodeMask) != dns.RcodeServer {
 		return
 	}
 	s.logger.Debug("sending SERVFAIL", "id", hdr.ID, "bytes", len(resp), "addr", addr.String())
@@ -146,25 +146,11 @@ func (s *Server) udpReadLoop(ctx context.Context, writer *udpWriter, cacheResolv
 		if !dns.IsValidRequest(b[:n]) {
 			if hdr, err := dns.ReadHeader(b[:n]); err == nil {
 				var formerr [dns.HeaderLen]byte
-				formerr[0] = byte(hdr.ID >> 8)
-				formerr[1] = byte(hdr.ID)
-				// 0x80 = QR=1 (response), 0x01 = RD; preserve OPCODE from request
-				opcode := byte((hdr.Flags & dns.FlagOpcode) >> 8)
-				if hdr.Flags&dns.FlagRD != 0 {
-					formerr[2] = 0x80 | 0x01 | opcode
-				} else {
-					formerr[2] = 0x80 | opcode
+				fmtHdr := dns.Header{
+					ID:    hdr.ID,
+					Flags: dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | (dns.RcodeFormat & dns.RcodeMask),
 				}
-				// RCODE=1 (Format Error)
-				formerr[3] = 0x01
-				formerr[4] = 0x00
-				formerr[5] = 0x00
-				formerr[6] = 0x00
-				formerr[7] = 0x00
-				formerr[8] = 0x00
-				formerr[9] = 0x00
-				formerr[10] = 0x00
-				formerr[11] = 0x00
+				_ = dns.WriteHeader(formerr[:], fmtHdr)
 				if _, err := writer.conn.WriteTo(formerr[:], addr); err != nil {
 					s.WriteErrors.Add(1)
 				}

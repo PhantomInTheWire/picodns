@@ -30,7 +30,7 @@ func servfailFromRequestInPlace(req []byte) ([]byte, bool) {
 		return nil, false
 	}
 
-	hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & 0x000F)
+	hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & dns.RcodeMask)
 	hdr.QDCount = 1
 	hdr.ANCount = 0
 	hdr.NSCount = 0
