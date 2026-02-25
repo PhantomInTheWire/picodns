@@ -457,7 +457,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		}
 
 		if debugEnabled {
-			rcode := respMsg.Header.Flags & 0x000F
+			rcode := respMsg.Header.Flags & dns.RcodeMask
 			kind := "empty"
 			if len(respMsg.Answers) > 0 {
 				kind = "answer"
@@ -506,7 +506,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 			return minimized, cleanup, nil
 		}
 
-		if (respMsg.Header.Flags & 0x000F) == dns.RcodeNXDomain {
+		if (respMsg.Header.Flags & dns.RcodeMask) == dns.RcodeNXDomain {
 			respMsg.Release()
 			segMin := r.tracers.iterMinimize.TraceNested(sampled)
 			minimized, _ := minimizeAndSetID(resp, clientID, true)

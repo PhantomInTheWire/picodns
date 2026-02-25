@@ -35,10 +35,11 @@ const (
 	FlagRD     = 0x0100 // Bit 8: Recursion Desired
 	FlagRA     = 0x0080 // Bit 7: Recursion Available
 
-	RcodeSuccess  = 0 // No error
-	RcodeFormat   = 1 // Format error - request malformed
-	RcodeServer   = 2 // Server failure
-	RcodeNXDomain = 3 // Non-existent domain
+	RcodeSuccess  = 0      // No error
+	RcodeFormat   = 1      // Format error - request malformed
+	RcodeServer   = 2      // Server failure
+	RcodeNXDomain = 3      // Non-existent domain
+	RcodeMask     = 0x000F // Bottom 4 bits: Response code
 
 	TypeA     uint16 = 1
 	TypeNS    uint16 = 2
@@ -48,6 +49,7 @@ const (
 	TypeTXT   uint16 = 16
 	TypeAAAA  uint16 = 28
 	TypeOPT   uint16 = 41
+	TypeTSIG  uint16 = 250
 	ClassIN   uint16 = 1
 
 	MaxMessageSize = 4096
@@ -337,7 +339,7 @@ func ValidateResponseWithRequest(reqHeader Header, reqQuestions []Question, resp
 		return ErrIDMismatch
 	}
 
-	if respHeader.Flags&0x8000 == 0 {
+	if respHeader.Flags&FlagQR == 0 {
 		return ErrNotResponse
 	}
 
