@@ -58,7 +58,7 @@ func (t *rttTracker) Update(ctx context.Context, server string, d time.Duration)
 	if !ok {
 		t.rtts[server] = d
 	} else {
-		t.rtts[server] = (prev*4 + d) / 5
+		t.rtts[server] = (prev*(ewmaWeight-1) + d) / ewmaWeight
 	}
 	delete(t.timeouts, server)
 	delete(t.cooldown, server)
@@ -77,8 +77,8 @@ func (t *rttTracker) Failure(ctx context.Context, server string) {
 		}
 	}
 	count := t.timeouts[server] + 1
-	if count > 6 {
-		count = 6
+	if count > maxTimeoutCount {
+		count = maxTimeoutCount
 	}
 	backoff := baseTimeoutBackoff << (count - 1)
 	if backoff > maxTimeoutBackoff {

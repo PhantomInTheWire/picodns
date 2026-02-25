@@ -57,7 +57,7 @@ func (p *connPool) get(ctx context.Context) (*net.UDPConn, func(bad bool), error
 
 	p.mu.Lock()
 	p.getCount++
-	prune := p.getCount%64 == 0 || (p.lastPrune.IsZero() || now.Sub(p.lastPrune) >= ConnPoolIdleTimeout)
+	prune := p.getCount%connPoolPruneEvery == 0 || (p.lastPrune.IsZero() || now.Sub(p.lastPrune) >= ConnPoolIdleTimeout)
 	if prune {
 		p.lastPrune = now
 		for i := 0; i < len(p.conns); {

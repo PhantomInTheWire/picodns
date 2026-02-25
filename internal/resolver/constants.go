@@ -44,6 +44,11 @@ const (
 	prefetchTimeout        = 10 * time.Second // Timeout for background prefetch operations
 	serveStaleFor          = 30 * time.Second // Serve expired cache entries for this long (stale-while-revalidate)
 
+	// EWMA and tracking constants
+	ewmaWeight         = 5  // EWMA denominator: new = (prev*(weight-1) + sample) / weight
+	maxTimeoutCount    = 6  // Maximum consecutive timeout count before capping
+	connPoolPruneEvery = 64 // Prune idle connections every N gets
+
 	// Parallel query settings
 	defaultMaxServers  = 3                      // Maximum concurrent servers for normal queries
 	glueMaxServers     = 2                      // Maximum concurrent servers for glue queries

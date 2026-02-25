@@ -30,10 +30,32 @@ func main() {
 
 	cacheStore := cache.New(cfg.CacheSize, nil)
 
+	res, cached, rec, upstream := buildResolver(cfg, logger, cacheStore, ctx)
+
+	srv := server.New(cfg, logger, res)
+	if cached != nil && cfg.Stats {
+		srv.SetCacheCounters(func() (uint64, uint64) {
+			return cached.CacheHits.Load(), cached.CacheMiss.Load()
+		})
+	}
+
+	err := srv.Start(ctx)
+	if cfg.Stats {
+		printStats(logger, cached, rec, upstream)
+	}
+
+	if err != nil && !errors.Is(err, context.Canceled) {
+		logger.Error("server exited", "error", err)
+		os.Exit(1)
+	}
+}
+
+func buildResolver(cfg config.Config, logger *slog.Logger, cacheStore *cache.Cache, ctx context.Context) (types.Resolver, *resolver.Cached, *resolver.Recursive, *resolver.Upstream) {
 	var res types.Resolver
 	var cached *resolver.Cached
 	var rec *resolver.Recursive
 	var upstream *resolver.Upstream
+
 	if cfg.Recursive || len(cfg.Upstreams) == 0 {
 		logger.Info("using recursive resolver")
 		rec = resolver.NewRecursive()
@@ -62,70 +84,48 @@ func main() {
 		res = cached
 	}
 
-	srv := server.New(cfg, logger, res)
-	if cached != nil && cfg.Stats {
-		srv.SetCacheCounters(func() (uint64, uint64) {
-			return cached.CacheHits.Load(), cached.CacheMiss.Load()
-		})
+	return res, cached, rec, upstream
+}
+
+func printStats(logger *slog.Logger, cached *resolver.Cached, rec *resolver.Recursive, upstream *resolver.Upstream) {
+	if rec != nil {
+		logger.Info("recursive internal cache stats",
+			"ns_cache", rec.NSCacheStatsSnapshot(),
+			"delegation_cache", rec.DelegationCacheStatsSnapshot(),
+		)
+		addr := rec.TransportAddrCacheStatsSnapshot()
+		addrHitRate := 0.0
+		if addr.Gets > 0 {
+			addrHitRate = float64(addr.Hits) / float64(addr.Gets)
+		}
+		logger.Info("transport addr cache stats",
+			"gets", addr.Gets, "hits", addr.Hits, "misses", addr.Misses,
+			"sets", addr.Sets, "deletes", addr.Deletes, "len", addr.Len,
+			"hit_rate", addrHitRate,
+		)
 	}
-
-	err := srv.Start(ctx)
-	if cfg.Stats {
-		if rec != nil {
-			logger.Info("recursive internal cache stats",
-				"ns_cache", rec.NSCacheStatsSnapshot(),
-				"delegation_cache", rec.DelegationCacheStatsSnapshot(),
-			)
-			addr := rec.TransportAddrCacheStatsSnapshot()
-			addrHitRate := 0.0
-			if addr.Gets > 0 {
-				addrHitRate = float64(addr.Hits) / float64(addr.Gets)
-			}
-			logger.Info("transport addr cache stats",
-				"gets", addr.Gets,
-				"hits", addr.Hits,
-				"misses", addr.Misses,
-				"sets", addr.Sets,
-				"deletes", addr.Deletes,
-				"len", addr.Len,
-				"hit_rate", addrHitRate,
-			)
+	if upstream != nil {
+		addr := upstream.TransportAddrCacheStatsSnapshot()
+		addrHitRate := 0.0
+		if addr.Gets > 0 {
+			addrHitRate = float64(addr.Hits) / float64(addr.Gets)
 		}
-		if upstream != nil {
-			addr := upstream.TransportAddrCacheStatsSnapshot()
-			addrHitRate := 0.0
-			if addr.Gets > 0 {
-				addrHitRate = float64(addr.Hits) / float64(addr.Gets)
-			}
-			logger.Info("transport addr cache stats",
-				"gets", addr.Gets,
-				"hits", addr.Hits,
-				"misses", addr.Misses,
-				"sets", addr.Sets,
-				"deletes", addr.Deletes,
-				"len", addr.Len,
-				"hit_rate", addrHitRate,
-			)
-		}
-
-		if cached != nil {
-			snap := cached.StatsSnapshot()
-			hitRate := 0.0
-			if snap.Hits+snap.Miss > 0 {
-				hitRate = float64(snap.Hits) / float64(snap.Hits+snap.Miss)
-			}
-
-			logger.Info("resolver cache stats",
-				"cache_hits", snap.Hits,
-				"cache_miss", snap.Miss,
-				"cache_hit_rate", hitRate,
-			)
-		}
+		logger.Info("transport addr cache stats",
+			"gets", addr.Gets, "hits", addr.Hits, "misses", addr.Misses,
+			"sets", addr.Sets, "deletes", addr.Deletes, "len", addr.Len,
+			"hit_rate", addrHitRate,
+		)
 	}
-
-	if err != nil && !errors.Is(err, context.Canceled) {
-		logger.Error("server exited", "error", err)
-		os.Exit(1)
+	if cached != nil {
+		snap := cached.StatsSnapshot()
+		hitRate := 0.0
+		if snap.Hits+snap.Miss > 0 {
+			hitRate = float64(snap.Hits) / float64(snap.Hits+snap.Miss)
+		}
+		logger.Info("resolver cache stats",
+			"cache_hits", snap.Hits, "cache_miss", snap.Miss,
+			"cache_hit_rate", hitRate,
+		)
 	}
 }
 
