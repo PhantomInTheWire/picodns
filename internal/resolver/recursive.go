@@ -23,6 +23,8 @@ type inflightRecursive struct {
 	err  error
 }
 
+// Recursive performs full iterative DNS resolution starting from the root servers.
+// It maintains a connection pool, RTT tracker, NS cache, and delegation cache.
 type Recursive struct {
 	transport       types.Transport
 	bufPool         *pool.Bytes
@@ -99,6 +101,8 @@ func NewRecursive(opts ...Option) *Recursive {
 	return r
 }
 
+// SetObsEnabled enables or disables observability (stats collection) on the
+// resolver and its internal caches and transport.
 func (r *Recursive) SetObsEnabled(enabled bool) {
 	r.ObsEnabled = enabled
 	if r.nsCache != nil {
@@ -112,6 +116,7 @@ func (r *Recursive) SetObsEnabled(enabled bool) {
 	}
 }
 
+// NSCacheStatsSnapshot returns a point-in-time snapshot of the NS name cache statistics.
 func (r *Recursive) NSCacheStatsSnapshot() cache.TTLStatsSnapshot {
 	if r.nsCache == nil {
 		return cache.TTLStatsSnapshot{}
@@ -119,6 +124,7 @@ func (r *Recursive) NSCacheStatsSnapshot() cache.TTLStatsSnapshot {
 	return r.nsCache.StatsSnapshot()
 }
 
+// DelegationCacheStatsSnapshot returns a point-in-time snapshot of the delegation cache statistics.
 func (r *Recursive) DelegationCacheStatsSnapshot() cache.TTLStatsSnapshot {
 	if r.delegationCache == nil || r.delegationCache.TTL == nil {
 		return cache.TTLStatsSnapshot{}
@@ -126,6 +132,7 @@ func (r *Recursive) DelegationCacheStatsSnapshot() cache.TTLStatsSnapshot {
 	return r.delegationCache.StatsSnapshot()
 }
 
+// TransportAddrCacheStatsSnapshot returns a point-in-time snapshot of the transport address cache statistics.
 func (r *Recursive) TransportAddrCacheStatsSnapshot() cache.TTLStatsSnapshot {
 	if t, ok := r.transport.(*udpTransport); ok && t.addrCache != nil {
 		return t.addrCache.StatsSnapshot()
@@ -140,6 +147,8 @@ type resolutionStats struct {
 	glueLookups  int           // NS name resolution queries (when no glue records)
 }
 
+// Resolve resolves a DNS query by iteratively querying authoritative servers
+// from the root. It deduplicates concurrent identical queries.
 func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	defer r.tracers.resolve.Trace()()
 

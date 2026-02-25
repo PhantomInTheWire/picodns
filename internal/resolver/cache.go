@@ -15,6 +15,8 @@ import (
 	"picodns/internal/types"
 )
 
+// Cached wraps a Resolver with a read-through cache, inflight deduplication,
+// stale-while-revalidate, and optional prefetch.
 type Cached struct {
 	cache      *cache.Cache
 	upstream   types.Resolver
@@ -46,6 +48,7 @@ type Cached struct {
 	}
 }
 
+// NewCached creates a Cached resolver that fronts the given upstream with a cache layer.
 func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 	c := &Cached{
 		cache:    cacheStore,
@@ -87,11 +90,13 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 	return c
 }
 
+// CachedStatsSnapshot holds a point-in-time snapshot of cache hit/miss counters.
 type CachedStatsSnapshot struct {
 	Hits uint64
 	Miss uint64
 }
 
+// StatsSnapshot returns a point-in-time snapshot of cache hit/miss counters.
 func (c *Cached) StatsSnapshot() CachedStatsSnapshot {
 	return CachedStatsSnapshot{
 		Hits: c.CacheHits.Load(),
@@ -150,6 +155,8 @@ func readQuestions(req []byte, qdCount uint16) ([]dns.Question, bool) {
 	return qs, true
 }
 
+// ResolveFromCache attempts to serve a response from cache without forwarding upstream.
+// It returns the response, a cleanup function, and whether the cache contained an entry.
 func (c *Cached) ResolveFromCache(ctx context.Context, req []byte) ([]byte, func(), bool) {
 	sampled := c.tracers.resolveFromCache.ShouldSample()
 	done := c.tracers.resolveFromCache.TraceSampled(sampled)
@@ -173,6 +180,8 @@ func (c *Cached) ResolveFromCache(ctx context.Context, req []byte) ([]byte, func
 	return nil, nil, false
 }
 
+// Resolve looks up the answer in cache first, falling back to the upstream resolver on a miss.
+// It deduplicates concurrent requests for the same question and caches successful responses.
 func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
 	sampled := c.tracers.resolve.ShouldSample()
 	done := c.tracers.resolve.TraceSampled(sampled)
