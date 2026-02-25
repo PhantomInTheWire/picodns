@@ -75,8 +75,3 @@ func (r *Registry) ReportJSON() ([]byte, error) {
 func Enabled() bool {
 	return false
 }
-
-// GoVersion returns empty string for non-perf builds.
-func GoVersion() string {
-	return ""
-}

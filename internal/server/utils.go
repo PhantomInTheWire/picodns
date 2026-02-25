@@ -35,7 +35,7 @@ func servfailFromRequestInPlace(req []byte) ([]byte, bool) {
 	hdr.ANCount = 0
 	hdr.NSCount = 0
 	hdr.ARCount = 0
-	_ = dns.WriteHeader(req, hdr)
+	_ = dns.WriteHeader(req, hdr) // cannot fail: buffer validated above
 
 	return req[:qEnd], true
 }

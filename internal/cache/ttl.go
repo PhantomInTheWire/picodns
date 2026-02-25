@@ -155,10 +155,6 @@ func (c *TTL[K, V]) Clear() {
 	c.items = make(map[K]ttlEntry[V])
 }
 
-// Permanent is a special TTL value that indicates the entry should never expire.
-// Use this for addrCache where addresses don't change.
-const Permanent = time.Duration(0)
-
 // PermanentCache is a cache that never expires entries.
 // It's a thin wrapper around TTL with a permanent TTL.
 type PermanentCache[K comparable, V any] struct {

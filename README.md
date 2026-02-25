@@ -23,7 +23,7 @@ It respects negative caching and TTL. Security features include: bailiwick check
 
 ## Benchmarking
 
-`make bench` runs `scripts/bench.sh` (uses `dnsperf`; optionally compares against `kresd`). The script:
+`make bench` runs `scripts/bench.py` (uses `dnsperf`; optionally compares against `kresd`). The script:
 
 - builds with `make build-perf`
 - runs PicoDNS with `-stats` and writes a perf JSON report to `perf/picodns-perf.json`

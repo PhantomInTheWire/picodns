@@ -1,3 +1,4 @@
+// Package pool provides reusable byte slice pools for DNS message buffers.
 package pool
 
 import "sync"

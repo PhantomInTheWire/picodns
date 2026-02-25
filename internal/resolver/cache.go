@@ -15,6 +15,23 @@ import (
 	"picodns/internal/types"
 )
 
+// cachedTracers holds performance tracing instrumentation for the Cached resolver.
+type cachedTracers struct {
+	resolveFromCache *obs.FuncTracer
+	resolve          *obs.FuncTracer
+	resolveFastPath  *obs.FuncTracer
+	resolveParseReq  *obs.FuncTracer
+	resolveInflight  *obs.FuncTracer
+	resolveUpstream  *obs.FuncTracer
+	resolveValidate  *obs.FuncTracer
+	resolveCacheSet  *obs.FuncTracer
+	getCachedWithKey *obs.FuncTracer
+	acquireInflight  *obs.FuncTracer
+	releaseInflight  *obs.FuncTracer
+	setCache         *obs.FuncTracer
+	maybePrefetch    *obs.FuncTracer
+}
+
 // Cached wraps a Resolver with a read-through cache, inflight deduplication,
 // stale-while-revalidate, and optional prefetch.
 type Cached struct {
@@ -31,21 +48,7 @@ type Cached struct {
 	CacheHits  atomic.Uint64
 	CacheMiss  atomic.Uint64
 
-	tracers struct {
-		resolveFromCache *obs.FuncTracer
-		resolve          *obs.FuncTracer
-		resolveFastPath  *obs.FuncTracer
-		resolveParseReq  *obs.FuncTracer
-		resolveInflight  *obs.FuncTracer
-		resolveUpstream  *obs.FuncTracer
-		resolveValidate  *obs.FuncTracer
-		resolveCacheSet  *obs.FuncTracer
-		getCachedWithKey *obs.FuncTracer
-		acquireInflight  *obs.FuncTracer
-		releaseInflight  *obs.FuncTracer
-		setCache         *obs.FuncTracer
-		maybePrefetch    *obs.FuncTracer
-	}
+	tracers cachedTracers
 }
 
 // NewCached creates a Cached resolver that fronts the given upstream with a cache layer.

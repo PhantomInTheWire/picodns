@@ -9,7 +9,6 @@ import (
 	"math"
 	"math/bits"
 	"os"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -391,11 +390,6 @@ func (r *Registry) ReportJSON() ([]byte, error) {
 // Enabled returns true if performance tracing is enabled.
 func Enabled() bool {
 	return true
-}
-
-// GoVersion returns the Go version for build info.
-func GoVersion() string {
-	return runtime.Version()
 }
 
 func formatDuration(d time.Duration) string {
