@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"time"
 
@@ -34,38 +35,7 @@ func secureRandUint16() uint16 {
 // formatIPPort formats an IP address as "ip:port" string.
 // IPv6 addresses are bracketed per RFC 3986: [::1]:53.
 func formatIPPort(ip net.IP, port int) string {
-	var buf [64]byte
-	n := 0
-	isV6 := ip.To4() == nil
-	if isV6 {
-		buf[n] = '['
-		n++
-	}
-	n += copy(buf[n:], ip.String())
-	if isV6 {
-		buf[n] = ']'
-		n++
-	}
-	buf[n] = ':'
-	portStart := n + 1
-	if port >= 10000 {
-		buf[portStart] = byte('0' + port/10000)
-		portStart++
-	}
-	if port >= 1000 {
-		buf[portStart] = byte('0' + (port/1000)%10)
-		portStart++
-	}
-	if port >= 100 {
-		buf[portStart] = byte('0' + (port/100)%10)
-		portStart++
-	}
-	if port >= 10 {
-		buf[portStart] = byte('0' + (port/10)%10)
-		portStart++
-	}
-	buf[portStart] = byte('0' + port%10)
-	return string(buf[:portStart+1])
+	return net.JoinHostPort(ip.String(), fmt.Sprintf("%d", port))
 }
 
 // cleanupBoth releases a pooled message and executes a cleanup function.
