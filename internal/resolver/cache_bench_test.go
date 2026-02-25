@@ -4,18 +4,43 @@ import (
 	"context"
 	"picodns/internal/cache"
 	"testing"
+	"time"
 )
 
 func BenchmarkResolveFromCache(b *testing.B) {
-	c := cache.New(10000, nil)
-	cr := NewCached(c, nil)
+	store := cache.New(10000, time.Now)
+	up := &stubResolver{resp: makeResponse(makeQuery("example.com"), 300)}
+	cr := NewCached(store, up)
 
-	// A query for example.com
-	req := []byte{0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x03, 0x77, 0x77, 0x77, 0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65,
-		0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01}
+	req := makeQuery("example.com")
+	// Populate cache
+	_, _, err := cr.Resolve(context.Background(), req)
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resp, cleanup, ok := cr.ResolveFromCache(ctx, req)
+		if !ok {
+			b.Fatal("expected cache hit")
+		}
+		if cleanup != nil {
+			cleanup()
+		}
+		_ = resp
+	}
+}
+
+func BenchmarkResolveFromCacheMiss(b *testing.B) {
+	store := cache.New(10000, nil)
+	cr := NewCached(store, nil)
+
+	req := makeQuery("example.com")
+	ctx := context.Background()
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cr.ResolveFromCache(ctx, req)
