@@ -150,6 +150,14 @@ type resolutionStats struct {
 	glueLookups  int           // NS name resolution queries (when no glue records)
 }
 
+// queryResult holds the outcome of a single nameserver query.
+type queryResult struct {
+	resp    []byte
+	cleanup func()
+	err     error
+	server  string
+}
+
 // Resolve resolves a DNS query by iteratively querying authoritative servers
 // from the root. It deduplicates concurrent identical queries.
 func (r *Recursive) Resolve(ctx context.Context, req []byte) ([]byte, func(), error) {
@@ -240,6 +248,276 @@ func (r *Recursive) releaseInflightRecursive(key uint64) {
 // It rebuilds queries if the name changes (e.g. following CNAME) and
 // performs bailiwick checking: root can provide glue for any TLD, but
 // TLDs should only provide glue for in-bailiwick nameservers.
+// queryServersParallel fans out DNS queries to the given servers with staggered
+// delays, collects the first successful response, and drains remaining results.
+// Returns the winning response, its cleanup func, the server that answered,
+// and any error. On context cancellation it returns ctx.Err().
+func (r *Recursive) queryServersParallel(
+	ctx context.Context,
+	servers []string,
+	name string,
+	q dns.Question,
+	questions []dns.Question,
+	stats *resolutionStats,
+	sampled bool,
+) (resp []byte, cleanup func(), respServer string, lastErr error) {
+	resultChan := make(chan queryResult, len(servers))
+	queryCtx, cancelQueries := context.WithCancel(ctx)
+
+	for i, server := range servers {
+		go func(srv string, idx int) {
+			res := queryResult{server: srv}
+			defer func() { resultChan <- res }()
+
+			if idx > 0 {
+				prevRTT, ok := r.rttTracker.Get(queryCtx, servers[idx-1])
+				if !ok {
+					prevRTT = unknownStaggerRTT
+				}
+				stagger := prevRTT * rttMultiplier / 10
+				if stagger < minStaggerDelay {
+					stagger = minStaggerDelay
+				}
+				if stagger > maxStaggerDelay {
+					stagger = maxStaggerDelay
+				}
+				if !sleepOrDone(queryCtx, stagger) {
+					res.err = queryCtx.Err()
+					return
+				}
+			}
+			if stats != nil {
+				stats.totalQueries.Add(1)
+			}
+
+			outID := secureRandUint16()
+			bufPtr := r.bufPool.Get()
+			buf := *bufPtr
+			n, err := dns.BuildQueryIntoWithEDNS(buf, outID, name, q.Type, q.Class, ednsUDPSize)
+			if err != nil {
+				r.bufPool.Put(bufPtr)
+				res.err = err
+				return
+			}
+			query := buf[:n]
+			startQ := time.Now()
+			rtt, ok := r.rttTracker.Get(queryCtx, srv)
+			if !ok || rtt <= 0 {
+				rtt = unknownRTT
+			}
+			qTimeout := rtt * queryTimeoutMul
+			qTimeout = min(maxQueryTimeout, max(minQueryTimeout, qTimeout))
+			select {
+			case r.querySem <- struct{}{}:
+				defer func() { <-r.querySem }()
+			case <-queryCtx.Done():
+				r.bufPool.Put(bufPtr)
+				res.err = queryCtx.Err()
+				return
+			}
+
+			resp, cleanup, err := r.transport.Query(queryCtx, srv, query, qTimeout)
+			r.bufPool.Put(bufPtr)
+			if err == nil {
+				r.rttTracker.Update(queryCtx, srv, time.Since(startQ))
+			} else {
+				r.rttTracker.Failure(queryCtx, srv)
+			}
+			if err == nil {
+				validateHeader := dns.Header{ID: outID, QDCount: 1}
+				if vErr := dns.ValidateResponseWithRequest(validateHeader, questions, resp); vErr != nil {
+					if cleanup != nil {
+						cleanup()
+					}
+					res.err = vErr
+					return
+				}
+			}
+			res.resp = resp
+			res.cleanup = cleanup
+			res.err = err
+		}(server, i)
+	}
+
+	received := 0
+	var ctxErr error
+	// Receive results; pick a winner (first success) but ensure all other
+	// successful results have their cleanup called to return pooled buffers
+	// and release pooled UDP conns.
+	segWait := r.tracers.iterHopWait.TraceNested(sampled)
+	for received < len(servers) {
+		select {
+		case res := <-resultChan:
+			received++
+			if res.err == nil {
+				if ctxErr != nil {
+					if res.cleanup != nil {
+						res.cleanup()
+					}
+					continue
+				}
+				if resp == nil {
+					resp = res.resp
+					cleanup = res.cleanup
+					respServer = res.server
+					if stats != nil {
+						stats.hops++
+					}
+					cancelQueries()
+
+					// Drain remaining results in the background so we always run
+					// cleanup for non-winning successful queries.
+					remaining := len(servers) - received
+					if remaining > 0 {
+						go func(n int) {
+							for i := 0; i < n; i++ {
+								r := <-resultChan
+								if r.cleanup != nil {
+									r.cleanup()
+								}
+							}
+						}(remaining)
+					}
+					received = len(servers)
+					break
+				}
+				if res.cleanup != nil {
+					res.cleanup()
+				}
+			} else if ctxErr == nil {
+				lastErr = res.err
+			}
+		case <-ctx.Done():
+			if ctxErr == nil {
+				ctxErr = ctx.Err()
+				cancelQueries()
+			}
+		}
+	}
+	segWait()
+	cancelQueries()
+
+	if ctxErr != nil && resp == nil {
+		return nil, nil, "", ctxErr
+	}
+
+	return resp, cleanup, respServer, lastErr
+}
+
+// handleAnswer processes a response that contains answer records. It follows
+// CNAME chains when present and minimizes the final response.
+func (r *Recursive) handleAnswer(
+	ctx context.Context,
+	resp []byte,
+	cleanup func(),
+	respMsg *dns.Message,
+	reqHeader dns.Header,
+	questions []dns.Question,
+	name string,
+	depth int,
+	seenCnames map[string]struct{},
+	stats *resolutionStats,
+	isGlue bool,
+	sampled bool,
+) ([]byte, func(), error) {
+	for _, ans := range respMsg.Answers {
+		if ans.Type == dns.TypeCNAME {
+			if ans.Name != name {
+				continue
+			}
+			cnameTarget := dns.ExtractNameFromData(resp, ans.DataOffset)
+			if cnameTarget == "" {
+				continue
+			}
+			if seenCnames == nil {
+				seenCnames = make(map[string]struct{})
+			}
+			if _, seen := seenCnames[cnameTarget]; seen {
+				cleanupBoth(respMsg, cleanup)
+				return nil, nil, ErrCnameLoop
+			}
+			seenCnames[cnameTarget] = struct{}{}
+			cleanupBoth(respMsg, cleanup)
+			return r.resolveIterative(ctx, reqHeader, questions, cnameTarget, depth+1, seenCnames, stats, isGlue)
+		}
+	}
+	respMsg.Release()
+	clientID := reqHeader.ID
+	segMin := r.tracers.iterMinimize.TraceNested(sampled)
+	minimized, _ := minimizeAndSetID(resp, clientID, false)
+	segMin()
+	return minimized, cleanup, nil
+}
+
+// handleReferral processes a referral response, extracting NS records and glue,
+// resolving NS names if needed, and updating the delegation cache.
+// Returns the new zone, new server list, and whether the referral was successful.
+func (r *Recursive) handleReferral(
+	ctx context.Context,
+	resp []byte,
+	cleanup func(),
+	respMsg *dns.Message,
+	zone string,
+	depth int,
+	seenCnames map[string]struct{},
+	stats *resolutionStats,
+	sampled bool,
+) (newZone string, newServers []string, ok bool) {
+	childZone := zone
+	minTTL := uint32(defaultReferralTTL)
+	for _, auth := range respMsg.Authorities {
+		if auth.Type == dns.TypeNS {
+			authZone := auth.Name
+			if authZone != "" {
+				childZone = authZone
+			}
+		}
+		if auth.TTL > 0 && auth.TTL < minTTL {
+			minTTL = auth.TTL
+		}
+	}
+	childZone = dns.NormalizeName(childZone)
+	if childZone == "" {
+		childZone = zone
+	}
+
+	bailiwickZone := zone
+	if zone != "." {
+		bailiwickZone = childZone
+	}
+	segRef := r.tracers.iterReferral.TraceNested(sampled)
+	nsServers, glueIPs, glueByNS := extractReferral(resp, *respMsg, bailiwickZone)
+	segRef()
+	respMsg.Release()
+	if len(nsServers) == 0 {
+		cleanupBoth(nil, cleanup)
+		return zone, nil, false
+	}
+
+	if len(glueIPs) > 0 {
+		// Populate nsCache from glue so subsequent glue-less referrals can avoid
+		// extra A lookups for the same NS names.
+		for nsName, ips := range glueByNS {
+			if len(ips) > 0 {
+				r.nsCache.Set(nsName, ips, nsCacheTTL)
+			}
+		}
+		r.delegationCache.Set(childZone, glueIPs, time.Duration(minTTL)*time.Second)
+		cleanupBoth(nil, cleanup)
+		return childZone, glueIPs, true
+	}
+
+	segNS := r.tracers.iterResolveNS.TraceNested(sampled)
+	resolvedIPs, err := r.resolveNSNames(ctx, nsServers, depth+1, seenCnames, stats)
+	segNS()
+	cleanupBoth(nil, cleanup)
+	if err != nil {
+		return zone, nil, false
+	}
+	r.delegationCache.Set(childZone, resolvedIPs, time.Duration(minTTL)*time.Second)
+	return childZone, resolvedIPs, true
+}
+
 func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, questions []dns.Question, name string, depth int, seenCnames map[string]struct{}, stats *resolutionStats, isGlue bool) ([]byte, func(), error) {
 	sampled := r.tracers.resolveIterative.ShouldSample()
 	done := r.tracers.resolveIterative.TraceSampled(sampled)
@@ -249,7 +527,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		return nil, nil, ErrMaxDepth
 	}
 
-	clientID := reqHeader.ID
 	debugEnabled := r.logger != nil && r.logger.Enabled(ctx, slog.LevelDebug)
 
 	questions = []dns.Question{{Name: name, Type: questions[0].Type, Class: questions[0].Class}}
@@ -276,14 +553,6 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		}
 
 		var gotReferral bool
-		var lastErr error
-
-		type queryResult struct {
-			resp    []byte
-			cleanup func()
-			err     error
-			server  string
-		}
 
 		maxServers := defaultMaxServers
 		if isGlue {
@@ -291,148 +560,9 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		}
 		servers = r.rttTracker.SortBest(ctx, servers, maxServers)
 
-		resultChan := make(chan queryResult, len(servers))
-		queryCtx, cancelQueries := context.WithCancel(ctx)
-
-		for i, server := range servers {
-			go func(srv string, idx int) {
-				res := queryResult{server: srv}
-				defer func() { resultChan <- res }()
-
-				if idx > 0 {
-					prevRTT, ok := r.rttTracker.Get(queryCtx, servers[idx-1])
-					if !ok {
-						prevRTT = unknownStaggerRTT
-					}
-					stagger := prevRTT * rttMultiplier / 10
-					if stagger < minStaggerDelay {
-						stagger = minStaggerDelay
-					}
-					if stagger > maxStaggerDelay {
-						stagger = maxStaggerDelay
-					}
-					if !sleepOrDone(queryCtx, stagger) {
-						res.err = queryCtx.Err()
-						return
-					}
-				}
-				if stats != nil {
-					stats.totalQueries.Add(1)
-				}
-
-				outID := secureRandUint16()
-				bufPtr := r.bufPool.Get()
-				buf := *bufPtr
-				n, err := dns.BuildQueryIntoWithEDNS(buf, outID, name, q.Type, q.Class, ednsUDPSize)
-				if err != nil {
-					r.bufPool.Put(bufPtr)
-					res.err = err
-					return
-				}
-				query := buf[:n]
-				startQ := time.Now()
-				rtt, ok := r.rttTracker.Get(queryCtx, srv)
-				if !ok || rtt <= 0 {
-					rtt = unknownRTT
-				}
-				qTimeout := rtt * queryTimeoutMul
-				qTimeout = min(maxQueryTimeout, max(minQueryTimeout, qTimeout))
-				select {
-				case r.querySem <- struct{}{}:
-					defer func() { <-r.querySem }()
-				case <-queryCtx.Done():
-					r.bufPool.Put(bufPtr)
-					res.err = queryCtx.Err()
-					return
-				}
-
-				resp, cleanup, err := r.transport.Query(queryCtx, srv, query, qTimeout)
-				r.bufPool.Put(bufPtr)
-				if err == nil {
-					r.rttTracker.Update(queryCtx, srv, time.Since(startQ))
-				} else {
-					r.rttTracker.Failure(queryCtx, srv)
-				}
-				if err == nil {
-					validateHeader := dns.Header{ID: outID, QDCount: 1}
-					if vErr := dns.ValidateResponseWithRequest(validateHeader, questions, resp); vErr != nil {
-						if cleanup != nil {
-							cleanup()
-						}
-						res.err = vErr
-						return
-					}
-				}
-				res.resp = resp
-				res.cleanup = cleanup
-				res.err = err
-			}(server, i)
-		}
-
-		var resp []byte
-		var cleanup func()
-		var respServer string
-		received := 0
-		var ctxErr error
-		// Receive results; pick a winner (first success) but ensure all other
-		// successful results have their cleanup called to return pooled buffers
-		// and release pooled UDP conns.
-		segWait := r.tracers.iterHopWait.TraceNested(sampled)
-		for received < len(servers) {
-			select {
-			case res := <-resultChan:
-				received++
-				if res.err == nil {
-					if ctxErr != nil {
-						if res.cleanup != nil {
-							res.cleanup()
-						}
-						continue
-					}
-					if resp == nil {
-						resp = res.resp
-						cleanup = res.cleanup
-						respServer = res.server
-						if stats != nil {
-							stats.hops++
-						}
-						cancelQueries()
-
-						// Drain remaining results in the background so we always run
-						// cleanup for non-winning successful queries.
-						remaining := len(servers) - received
-						if remaining > 0 {
-							go func(n int) {
-								for i := 0; i < n; i++ {
-									r := <-resultChan
-									if r.cleanup != nil {
-										r.cleanup()
-									}
-								}
-							}(remaining)
-						}
-						received = len(servers)
-						break
-					}
-					if res.cleanup != nil {
-						res.cleanup()
-					}
-				} else if ctxErr == nil {
-					lastErr = res.err
-				}
-			case <-ctx.Done():
-				if ctxErr == nil {
-					ctxErr = ctx.Err()
-					cancelQueries()
-				}
-			}
-		}
-		segWait()
-		cancelQueries()
-
-		if ctxErr != nil && resp == nil {
-			return nil, nil, ctxErr
-		}
+		resp, cleanup, respServer, lastErr := r.queryServersParallel(
+			ctx, servers, name, q, questions, stats, sampled,
+		)
 
 		if resp == nil {
 			if debugEnabled {
@@ -481,36 +611,12 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		}
 
 		if len(respMsg.Answers) > 0 {
-			for _, ans := range respMsg.Answers {
-				if ans.Type == dns.TypeCNAME {
-					if ans.Name != name {
-						continue
-					}
-					cnameTarget := dns.ExtractNameFromData(resp, ans.DataOffset)
-					if cnameTarget == "" {
-						continue
-					}
-					if seenCnames == nil {
-						seenCnames = make(map[string]struct{})
-					}
-					if _, seen := seenCnames[cnameTarget]; seen {
-						cleanupBoth(respMsg, cleanup)
-						return nil, nil, ErrCnameLoop
-					}
-					seenCnames[cnameTarget] = struct{}{}
-					cleanupBoth(respMsg, cleanup)
-					return r.resolveIterative(ctx, reqHeader, questions, cnameTarget, depth+1, seenCnames, stats, isGlue)
-				}
-			}
-			respMsg.Release()
-			segMin := r.tracers.iterMinimize.TraceNested(sampled)
-			minimized, _ := minimizeAndSetID(resp, clientID, false)
-			segMin()
-			return minimized, cleanup, nil
+			return r.handleAnswer(ctx, resp, cleanup, respMsg, reqHeader, questions, name, depth, seenCnames, stats, isGlue, sampled)
 		}
 
 		if (respMsg.Header.Flags & dns.RcodeMask) == dns.RcodeNXDomain {
 			respMsg.Release()
+			clientID := reqHeader.ID
 			segMin := r.tracers.iterMinimize.TraceNested(sampled)
 			minimized, _ := minimizeAndSetID(resp, clientID, true)
 			segMin()
@@ -518,61 +624,16 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 		}
 
 		if len(respMsg.Authorities) > 0 {
-			childZone := zone
-			minTTL := uint32(defaultReferralTTL)
-			for _, auth := range respMsg.Authorities {
-				if auth.Type == dns.TypeNS {
-					authZone := auth.Name
-					if authZone != "" {
-						childZone = authZone
-					}
-				}
-				if auth.TTL > 0 && auth.TTL < minTTL {
-					minTTL = auth.TTL
-				}
-			}
-			childZone = dns.NormalizeName(childZone)
-			if childZone == "" {
-				childZone = zone
-			}
-
-			bailiwickZone := zone
-			if zone != "." {
-				bailiwickZone = childZone
-			}
-			segRef := r.tracers.iterReferral.TraceNested(sampled)
-			nsServers, glueIPs, glueByNS := extractReferral(resp, *respMsg, bailiwickZone)
-			segRef()
-			respMsg.Release()
-			if len(nsServers) == 0 {
-				cleanupBoth(nil, cleanup)
+			newZone, newServers, ok := r.handleReferral(
+				ctx, resp, cleanup, respMsg, zone, depth, seenCnames, stats, sampled,
+			)
+			if ok {
+				zone = newZone
+				servers = newServers
+				gotReferral = true
 				continue
 			}
-
-			if len(glueIPs) > 0 {
-				// Populate nsCache from glue so subsequent glue-less referrals can avoid
-				// extra A lookups for the same NS names.
-				for nsName, ips := range glueByNS {
-					if len(ips) > 0 {
-						r.nsCache.Set(nsName, ips, nsCacheTTL)
-					}
-				}
-				servers = glueIPs
-				r.delegationCache.Set(childZone, glueIPs, time.Duration(minTTL)*time.Second)
-				cleanupBoth(nil, cleanup)
-			} else {
-				segNS := r.tracers.iterResolveNS.TraceNested(sampled)
-				resolvedIPs, err := r.resolveNSNames(ctx, nsServers, depth+1, seenCnames, stats)
-				segNS()
-				cleanupBoth(nil, cleanup)
-				if err != nil {
-					continue
-				}
-				servers = resolvedIPs
-				r.delegationCache.Set(childZone, resolvedIPs, time.Duration(minTTL)*time.Second)
-			}
-			zone = childZone
-			gotReferral = true
+			// handleReferral already cleaned up; if no NS servers found, continue the loop
 			continue
 		}
 		cleanupBoth(respMsg, cleanup)
