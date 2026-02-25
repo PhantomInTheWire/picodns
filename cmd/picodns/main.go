@@ -19,6 +19,7 @@ import (
 func main() {
 	cfg := config.Default()
 	config.BindFlags(&cfg)
+	config.ParseFlags(&cfg)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLevel(cfg.LogLevel),
