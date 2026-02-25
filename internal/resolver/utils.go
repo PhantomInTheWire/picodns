@@ -32,9 +32,20 @@ func secureRandUint16() uint16 {
 }
 
 // formatIPPort formats an IP address as "ip:port" string.
+// IPv6 addresses are bracketed per RFC 3986: [::1]:53.
 func formatIPPort(ip net.IP, port int) string {
-	var buf [50]byte
-	n := copy(buf[:], ip.String())
+	var buf [64]byte
+	n := 0
+	isV6 := ip.To4() == nil
+	if isV6 {
+		buf[n] = '['
+		n++
+	}
+	n += copy(buf[n:], ip.String())
+	if isV6 {
+		buf[n] = ']'
+		n++
+	}
 	buf[n] = ':'
 	portStart := n + 1
 	if port >= 10000 {

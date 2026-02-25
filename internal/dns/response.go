@@ -86,6 +86,12 @@ func responseFlags(reqFlags uint16, rcode uint16) uint16 {
 // MinimizeResponse strips authority/additional sections to reduce size.
 // If keepAuthorities is true, authority records are preserved and additionals dropped.
 // The response is modified in place and returned as a sliced buffer.
+//
+// NOTE: This unconditionally strips ALL additional records, including EDNS0 OPT
+// (type 41) records. This is intentional — the server does not advertise EDNS0
+// support to clients, so cached (minimized) responses omit OPT. Clients that
+// send EDNS0 queries will not receive an OPT record in responses. This is a
+// known limitation.
 func MinimizeResponse(resp []byte, keepAuthorities bool) ([]byte, error) {
 	header, err := ReadHeader(resp)
 	if err != nil {

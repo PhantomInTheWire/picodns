@@ -296,10 +296,14 @@ func IsValidRequest(buf []byte) bool {
 		return false
 	}
 
-	// Basic question parsing check - just verify the name is readable
+	// Basic question parsing check - verify name is readable and qtype/qclass exist
 	off := HeaderLen
-	_, err = SkipName(buf, off)
-	return err == nil
+	nameEnd, err := SkipName(buf, off)
+	if err != nil {
+		return false
+	}
+	// 4 bytes for qtype (2) + qclass (2) must follow the name
+	return nameEnd+4 <= len(buf)
 }
 
 func ValidateResponse(req []byte, resp []byte) error {

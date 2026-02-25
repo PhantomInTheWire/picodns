@@ -188,7 +188,7 @@ func TestIsValidRequest(t *testing.T) {
 				// Remove the 4 bytes for qtype and qclass
 				return n - 2
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "invalid first byte",
