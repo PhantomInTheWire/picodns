@@ -119,7 +119,16 @@ func (s *Server) startTCPListener(ctx context.Context, addr string, readersWg *s
 				s.logger.Error("tcp accept error", "error", err)
 				continue
 			}
-			go s.handleTCPConn(ctx, conn)
+			select {
+			case s.tcpSem <- struct{}{}:
+				go func(c net.Conn) {
+					defer func() { <-s.tcpSem }()
+					s.handleTCPConn(ctx, c)
+				}(conn)
+			default:
+				// At capacity, reject connection
+				_ = conn.Close()
+			}
 		}
 	}(ln)
 

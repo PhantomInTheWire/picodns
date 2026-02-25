@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"time"
 
 	"picodns/internal/dns"
 )
@@ -23,6 +24,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 
 	var lenBuf [2]byte
 	for {
+		_ = conn.SetReadDeadline(time.Now().Add(tcpReadTimeout))
 		if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
 			return
 		}
@@ -34,10 +36,13 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 
 		bufPtr := s.bufPool.Get()
 		buf := (*bufPtr)[:msgLen]
+		_ = conn.SetReadDeadline(time.Now().Add(tcpReadTimeout))
 		if _, err := io.ReadFull(conn, buf); err != nil {
 			s.bufPool.Put(bufPtr)
 			return
 		}
+
+		s.TotalQueries.Add(1)
 
 		resp, cleanup, err := s.resolver.Resolve(ctx, buf)
 		if err != nil {
@@ -52,6 +57,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 					s.maybeLogServfail(sf, conn.RemoteAddr())
 				}
 				binary.BigEndian.PutUint16(lenBuf[:], uint16(len(sf)))
+				_ = conn.SetWriteDeadline(time.Now().Add(tcpWriteTimeout))
 				if _, werr := conn.Write(lenBuf[:]); werr == nil {
 					_, _ = conn.Write(sf)
 				}
@@ -80,6 +86,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 		if s.logServfail {
 			s.maybeLogServfail(resp, conn.RemoteAddr())
 		}
+		_ = conn.SetWriteDeadline(time.Now().Add(tcpWriteTimeout))
 		if _, err := conn.Write(lenBuf[:]); err != nil {
 			s.WriteErrors.Add(1)
 			s.logger.Error("write error", "error", err)

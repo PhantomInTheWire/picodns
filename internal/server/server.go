@@ -13,6 +13,12 @@ import (
 	"picodns/internal/types"
 )
 
+const (
+	tcpReadTimeout  = 5 * time.Second // Max time to read a complete DNS message
+	tcpWriteTimeout = 5 * time.Second // Max time to write a complete DNS response
+	maxTCPConns     = 256             // Maximum concurrent TCP connections
+)
+
 type Server struct {
 	cfg              config.Config
 	logger           *slog.Logger
@@ -24,6 +30,7 @@ type Server struct {
 	DroppedResponses atomic.Uint64
 	HandlerErrors    atomic.Uint64
 	WriteErrors      atomic.Uint64
+	tcpSem           chan struct{}
 	logServfail      bool
 
 	cacheCounters func() (hits uint64, miss uint64)
@@ -39,6 +46,7 @@ func New(cfg config.Config, logger *slog.Logger, res types.Resolver) *Server {
 		resolver: res,
 		bufPool:  pool.DefaultPool,
 		jobQueue: make(chan queryJob, cfg.Workers),
+		tcpSem:   make(chan struct{}, maxTCPConns),
 	}
 	// Cache this once; slog's Enabled check is not free at very high QPS.
 	s.logServfail = logger.Enabled(context.Background(), slog.LevelDebug)
