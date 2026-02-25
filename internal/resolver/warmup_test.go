@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,12 +13,15 @@ import (
 
 // mockTransport implements types.Transport for testing warmup.
 type mockTransport struct {
+	mu         sync.Mutex
 	queryCount int
 	resp       []byte
 }
 
 func (m *mockTransport) Query(_ context.Context, server string, req []byte, timeout time.Duration) ([]byte, func(), error) {
+	m.mu.Lock()
 	m.queryCount++
+	m.mu.Unlock()
 	if m.resp != nil {
 		return m.resp, nil, nil
 	}
@@ -44,7 +48,9 @@ func TestWarmupRTTQueriesRootServers(t *testing.T) {
 	r.warmupRTT(ctx)
 
 	// Should have queried both root servers
+	mt.mu.Lock()
 	require.Equal(t, 2, mt.queryCount)
+	mt.mu.Unlock()
 }
 
 func TestWarmupPopulatesDelegationCache(t *testing.T) {
@@ -57,7 +63,9 @@ func TestWarmupPopulatesDelegationCache(t *testing.T) {
 	r.Warmup(ctx)
 
 	// Should have made queries for root servers + common TLDs
+	mt.mu.Lock()
 	require.Greater(t, mt.queryCount, 0)
+	mt.mu.Unlock()
 }
 
 func TestWarmupRespectsContextCancellation(t *testing.T) {
