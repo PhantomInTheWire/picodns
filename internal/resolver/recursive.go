@@ -23,6 +23,20 @@ type inflightRecursive struct {
 	err  error
 }
 
+// recursiveTracers holds performance tracing instrumentation for the Recursive resolver.
+type recursiveTracers struct {
+	resolve          *obs.FuncTracer
+	resolveIterative *obs.FuncTracer
+	iterHopWait      *obs.FuncTracer
+	iterParseMsg     *obs.FuncTracer
+	iterMinimize     *obs.FuncTracer
+	iterReferral     *obs.FuncTracer
+	iterResolveNS    *obs.FuncTracer
+	resolveNSNames   *obs.FuncTracer
+	warmup           *obs.FuncTracer
+	warmupRTT        *obs.FuncTracer
+}
+
 // Recursive performs full iterative DNS resolution starting from the root servers.
 // It maintains a connection pool, RTT tracker, NS cache, and delegation cache.
 type Recursive struct {
@@ -40,18 +54,7 @@ type Recursive struct {
 	inflightMu sync.Mutex
 	inflight   map[uint64]*inflightRecursive
 
-	tracers struct {
-		resolve          *obs.FuncTracer
-		resolveIterative *obs.FuncTracer
-		iterHopWait      *obs.FuncTracer
-		iterParseMsg     *obs.FuncTracer
-		iterMinimize     *obs.FuncTracer
-		iterReferral     *obs.FuncTracer
-		iterResolveNS    *obs.FuncTracer
-		resolveNSNames   *obs.FuncTracer
-		warmup           *obs.FuncTracer
-		warmupRTT        *obs.FuncTracer
-	}
+	tracers recursiveTracers
 }
 
 // NewRecursive creates a new recursive DNS resolver.
@@ -63,7 +66,7 @@ func NewRecursive(opts ...Option) *Recursive {
 		logger:          slog.Default(),
 		nsCache:         cache.NewTTL[string, []string](nil),
 		delegationCache: newDelegationCache(),
-		querySem:        make(chan struct{}, 1024),
+		querySem:        make(chan struct{}, maxConcurrentQueries),
 		inflight:        make(map[uint64]*inflightRecursive),
 	}
 	r.nsCache.MaxLen = maxNSCacheEntries
@@ -516,7 +519,7 @@ func (r *Recursive) resolveIterative(ctx context.Context, reqHeader dns.Header, 
 
 		if len(respMsg.Authorities) > 0 {
 			childZone := zone
-			minTTL := uint32(3600)
+			minTTL := uint32(defaultReferralTTL)
 			for _, auth := range respMsg.Authorities {
 				if auth.Type == dns.TypeNS {
 					authZone := auth.Name

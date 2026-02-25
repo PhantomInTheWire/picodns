@@ -102,7 +102,7 @@ func servfailFromRequest(req []byte) ([]byte, bool) {
 	hdr.ANCount = 0
 	hdr.NSCount = 0
 	hdr.ARCount = 0
-	_ = dns.WriteHeader(resp, hdr)
+	_ = dns.WriteHeader(resp, hdr) // cannot fail: buffer validated above
 
 	return resp, true
 }
@@ -169,7 +169,7 @@ func cacheTTLForResponse(fullResp []byte, msg dns.Message, q dns.Question) (time
 	current := q.Name
 	seen := make(map[string]struct{}, 4)
 	seen[current] = struct{}{}
-	for i := 0; i < 16; i++ {
+	for i := 0; i < maxCNAMEChainLength; i++ {
 		var next string
 		var ttl uint32
 		found := false

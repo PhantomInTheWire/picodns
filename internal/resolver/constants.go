@@ -87,6 +87,15 @@ const (
 
 	// EDNS0 settings
 	ednsUDPSize = 1232 // Common safe UDP size to avoid fragmentation
+
+	// Query concurrency
+	maxConcurrentQueries = 1024 // Maximum in-flight queries (semaphore size)
+
+	// CNAME resolution
+	maxCNAMEChainLength = 16 // Maximum CNAME chain depth for TTL computation
+
+	// Referral defaults
+	defaultReferralTTL = 3600 // Default TTL (seconds) for referral NS records when no TTL is present
 )
 
 // Resolver errors
@@ -95,5 +104,4 @@ var (
 	ErrNoNameservers = errors.New("recursive resolver: no nameservers found")
 	ErrNoGlueRecords = errors.New("recursive resolver: no glue records for NS")
 	ErrCnameLoop     = errors.New("recursive resolver: CNAME loop detected")
-	ErrNoRootServers = errors.New("recursive resolver: no root servers available")
 )
