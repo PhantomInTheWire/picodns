@@ -6,11 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"picodns/internal/obs"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestRTTTrackerUpdateAndGet(t *testing.T) {
-	tracker := newRTTTracker(nil)
+	tracker := newRTTTracker(nil, obs.NewRegistry())
 	ctx := context.Background()
 
 	// Unknown server returns unknownRTT
@@ -32,7 +34,7 @@ func TestRTTTrackerUpdateAndGet(t *testing.T) {
 }
 
 func TestRTTTrackerFailureAndCooldown(t *testing.T) {
-	tracker := newRTTTracker(nil)
+	tracker := newRTTTracker(nil, obs.NewRegistry())
 	ctx := context.Background()
 
 	tracker.Failure(ctx, "bad.server:53")
@@ -56,7 +58,7 @@ func TestRTTTrackerFailureAndCooldown(t *testing.T) {
 }
 
 func TestRTTTrackerSortBest(t *testing.T) {
-	tracker := newRTTTracker(nil)
+	tracker := newRTTTracker(nil, obs.NewRegistry())
 	ctx := context.Background()
 
 	tracker.Update(ctx, "slow:53", 500*time.Millisecond)
@@ -72,7 +74,7 @@ func TestRTTTrackerSortBest(t *testing.T) {
 }
 
 func TestRTTTrackerSortBestSkipsCooldown(t *testing.T) {
-	tracker := newRTTTracker(nil)
+	tracker := newRTTTracker(nil, obs.NewRegistry())
 	ctx := context.Background()
 
 	tracker.Update(ctx, "good:53", 100*time.Millisecond)
@@ -84,7 +86,7 @@ func TestRTTTrackerSortBestSkipsCooldown(t *testing.T) {
 }
 
 func TestRTTTrackerEviction(t *testing.T) {
-	tracker := newRTTTracker(nil)
+	tracker := newRTTTracker(nil, obs.NewRegistry())
 	ctx := context.Background()
 
 	// Fill beyond maxRTTTrackerEntries

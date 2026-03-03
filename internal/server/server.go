@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"picodns/internal/config"
+	"picodns/internal/obs"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
@@ -32,21 +33,23 @@ type Server struct {
 	WriteErrors      atomic.Uint64
 	tcpSem           chan struct{}
 	logServfail      bool
+	perfRegistry     *obs.Registry
 
 	cacheCounters func() (hits uint64, miss uint64)
 }
 
-func New(cfg config.Config, logger *slog.Logger, res types.Resolver) *Server {
+func New(cfg config.Config, logger *slog.Logger, res types.Resolver, registry *obs.Registry) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	s := &Server{
-		cfg:      cfg,
-		logger:   logger,
-		resolver: res,
-		bufPool:  pool.DefaultPool,
-		jobQueue: make(chan queryJob, cfg.Workers),
-		tcpSem:   make(chan struct{}, maxTCPConns),
+		cfg:          cfg,
+		logger:       logger,
+		resolver:     res,
+		bufPool:      pool.DefaultPool,
+		jobQueue:     make(chan queryJob, cfg.Workers),
+		tcpSem:       make(chan struct{}, maxTCPConns),
+		perfRegistry: registry,
 	}
 	// Cache this once; slog's Enabled check is not free at very high QPS.
 	s.logServfail = logger.Enabled(context.Background(), slog.LevelDebug)

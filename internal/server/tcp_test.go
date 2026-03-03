@@ -13,6 +13,7 @@ import (
 
 	"picodns/internal/config"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 )
 
 // mockResolver implements types.Resolver for testing.
@@ -46,7 +47,7 @@ func newTestServer(resolver *mockResolver) *Server {
 	cfg := config.Default()
 	cfg.Workers = 1
 	logger := slog.Default()
-	return New(cfg, logger, resolver)
+	return New(cfg, logger, resolver, obs.NewRegistry())
 }
 
 func writeTCPQuery(t *testing.T, conn net.Conn, query []byte) {
@@ -211,7 +212,7 @@ func TestTCPHandlerCancelsResolverOnContextCancel(t *testing.T) {
 	}
 	cfg := config.Default()
 	cfg.Workers = 1
-	srv := New(cfg, slog.Default(), resolver)
+	srv := New(cfg, slog.Default(), resolver, obs.NewRegistry())
 
 	client, server := net.Pipe()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

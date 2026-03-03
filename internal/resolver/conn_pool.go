@@ -28,7 +28,7 @@ type udpConn struct {
 	inUse    bool
 }
 
-func newConnPool() *connPool {
+func newConnPool(registry *obs.Registry) *connPool {
 	p := &connPool{
 		conns: make([]*udpConn, 0, ConnPoolMaxConns),
 	}
@@ -36,8 +36,7 @@ func newConnPool() *connPool {
 	p.tracers.get = obs.NewFuncTracer("connPool.get", nil)
 	p.tracers.release = obs.NewFuncTracer("connPool.release", nil)
 
-	obs.GlobalRegistry.Register(p.tracers.get)
-	obs.GlobalRegistry.Register(p.tracers.release)
+	registry.RegisterAll(p.tracers.get, p.tracers.release)
 
 	return p
 }

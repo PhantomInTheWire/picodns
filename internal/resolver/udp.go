@@ -61,7 +61,7 @@ func (t *udpTransport) SetObsEnabled(enabled bool) {
 	t.addrCache.ObsEnabled = enabled
 }
 
-func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration) types.Transport {
+func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration, registry *obs.Registry) types.Transport {
 	t := &udpTransport{
 		bufPool:   bufPool,
 		connPool:  connPool,
@@ -81,16 +81,18 @@ func NewTransport(bufPool *pool.Bytes, connPool *connPool, timeout time.Duration
 	t.tracers.tcpRead = obs.NewFuncTracer("tcpQueryWithValidation.netRead", t.tracers.tcpQuery)
 	t.tracers.resolveAddr = obs.NewFuncTracer("udpTransport.resolveAddr", t.tracers.query)
 
-	obs.GlobalRegistry.Register(t.tracers.query)
-	obs.GlobalRegistry.Register(t.tracers.queryUDP)
-	obs.GlobalRegistry.Register(t.tracers.udpDeadline)
-	obs.GlobalRegistry.Register(t.tracers.udpWrite)
-	obs.GlobalRegistry.Register(t.tracers.udpRead)
-	obs.GlobalRegistry.Register(t.tracers.tcpQuery)
-	obs.GlobalRegistry.Register(t.tracers.tcpDial)
-	obs.GlobalRegistry.Register(t.tracers.tcpWrite)
-	obs.GlobalRegistry.Register(t.tracers.tcpRead)
-	obs.GlobalRegistry.Register(t.tracers.resolveAddr)
+	registry.RegisterAll(
+		t.tracers.query,
+		t.tracers.queryUDP,
+		t.tracers.udpDeadline,
+		t.tracers.udpWrite,
+		t.tracers.udpRead,
+		t.tracers.tcpQuery,
+		t.tracers.tcpDial,
+		t.tracers.tcpWrite,
+		t.tracers.tcpRead,
+		t.tracers.resolveAddr,
+	)
 
 	return t
 }

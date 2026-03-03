@@ -8,6 +8,7 @@ import (
 
 	"picodns/internal/cache"
 	"picodns/internal/config"
+	"picodns/internal/obs"
 )
 
 func TestParseLevel(t *testing.T) {
@@ -22,7 +23,7 @@ func TestBuildResolverRecursive(t *testing.T) {
 	cfg.Recursive = true
 	cfg.Upstreams = nil
 
-	runtime, err := buildResolver(cfg, slog.Default(), cache.New(cfg.CacheSize, nil))
+	runtime, err := buildResolver(cfg, slog.Default(), cache.New(cfg.CacheSize, nil), obs.NewRegistry())
 	require.NoError(t, err)
 
 	require.NotNil(t, runtime)
@@ -37,7 +38,7 @@ func TestBuildResolverUpstream(t *testing.T) {
 	cfg.Recursive = false
 	cfg.Upstreams = []string{"127.0.0.1:53"}
 
-	runtime, err := buildResolver(cfg, slog.Default(), cache.New(cfg.CacheSize, nil))
+	runtime, err := buildResolver(cfg, slog.Default(), cache.New(cfg.CacheSize, nil), obs.NewRegistry())
 	require.NoError(t, err)
 
 	require.NotNil(t, runtime)

@@ -162,7 +162,10 @@ func (s *Server) writePerfReport() {
 	if path == "" {
 		return
 	}
-	data, err := obs.GlobalRegistry.ReportJSON()
+	if s.perfRegistry == nil {
+		return
+	}
+	data, err := s.perfRegistry.ReportJSON()
 	if err != nil {
 		s.logger.Error("failed to build perf report", "error", err)
 		return

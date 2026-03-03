@@ -2,15 +2,17 @@ package resolver
 
 import (
 	"context"
-	"picodns/internal/cache"
 	"testing"
 	"time"
+
+	"picodns/internal/cache"
+	"picodns/internal/obs"
 )
 
 func BenchmarkResolveFromCache(b *testing.B) {
 	store := cache.New(10000, time.Now)
 	up := &stubResolver{resp: makeResponse(makeQuery("example.com"), 300)}
-	cr := NewCached(store, up)
+	cr := NewCached(store, up, obs.NewRegistry())
 
 	req := makeQuery("example.com")
 	// Populate cache
@@ -36,7 +38,7 @@ func BenchmarkResolveFromCache(b *testing.B) {
 
 func BenchmarkResolveFromCacheMiss(b *testing.B) {
 	store := cache.New(10000, nil)
-	cr := NewCached(store, nil)
+	cr := NewCached(store, nil, obs.NewRegistry())
 
 	req := makeQuery("example.com")
 	ctx := context.Background()

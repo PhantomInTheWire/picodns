@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"picodns/internal/cache"
+	"picodns/internal/obs"
 	"picodns/internal/pool"
 	"picodns/internal/types"
 )
@@ -36,7 +37,7 @@ func (u *Upstream) TransportAddrCacheStatsSnapshot() cache.TTLStatsSnapshot {
 }
 
 // NewUpstream creates an Upstream resolver that forwards queries to the given addresses.
-func NewUpstream(upstreamAddrs []string) (*Upstream, error) {
+func NewUpstream(upstreamAddrs []string, registry *obs.Registry) (*Upstream, error) {
 	if len(upstreamAddrs) == 0 {
 		return nil, ErrNoUpstreams
 	}
@@ -49,7 +50,7 @@ func NewUpstream(upstreamAddrs []string) (*Upstream, error) {
 
 	return &Upstream{
 		upstreams: upstreamAddrs,
-		transport: NewTransport(pool.DefaultPool, newConnPool(), defaultTimeout),
+		transport: NewTransport(pool.DefaultPool, newConnPool(registry), defaultTimeout, registry),
 	}, nil
 }
 

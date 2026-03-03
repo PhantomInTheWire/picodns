@@ -10,6 +10,7 @@ import (
 
 	"picodns/internal/cache"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 )
 
 type stubResolver struct {
@@ -45,7 +46,7 @@ func TestCachedResolverStoresAndHits(t *testing.T) {
 	resp := makeResponse(req, 30)
 	store := cache.New(10, clock)
 	up := &stubResolver{resp: resp}
-	res := NewCached(store, up)
+	res := NewCached(store, up, obs.NewRegistry())
 	res.clock = clock
 
 	first, _, err := res.Resolve(context.Background(), req)
@@ -71,7 +72,7 @@ func TestCachedResolverPrefetch(t *testing.T) {
 	resp := makeResponse(req, 100)
 	store := cache.New(10, clock)
 	up := &stubResolver{resp: resp}
-	res := NewCached(store, up)
+	res := NewCached(store, up, obs.NewRegistry())
 	res.clock = clock
 	res.Prefetch = true
 
@@ -136,7 +137,7 @@ func TestCachedResolverEarlyReturnWithCachedIPs(t *testing.T) {
 	resp := makeResponse(req, 300)
 	store := cache.New(10, time.Now)
 	up := &stubResolver{resp: resp}
-	res := NewCached(store, up)
+	res := NewCached(store, up, obs.NewRegistry())
 
 	_, _, err := res.Resolve(context.Background(), req)
 	require.NoError(t, err)
@@ -152,7 +153,7 @@ func TestCacheMetadataTracking(t *testing.T) {
 	clock := func() time.Time { return now }
 	store := cache.New(10, clock)
 	up := &stubResolver{resp: makeResponse(makeQuery("test.com"), 60)}
-	res := NewCached(store, up)
+	res := NewCached(store, up, obs.NewRegistry())
 
 	_, _, err := res.Resolve(context.Background(), makeQuery("test.com"))
 	require.NoError(t, err)
@@ -172,7 +173,7 @@ func TestCacheMetadataTracking(t *testing.T) {
 func TestCachedResolverRewritesIDFromCache(t *testing.T) {
 	store := cache.New(10, time.Now)
 	up := &stubResolver{resp: makeResponse(makeQuery("example.com"), 60)}
-	res := NewCached(store, up)
+	res := NewCached(store, up, obs.NewRegistry())
 
 	firstReq := makeQuery("example.com")
 	_, _, err := res.Resolve(context.Background(), firstReq)

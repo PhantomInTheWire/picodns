@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpstreamResolve(t *testing.T) {
@@ -36,7 +38,7 @@ func TestUpstreamResolve(t *testing.T) {
 		_, _ = conn.WriteTo(resp, addr)
 	}()
 
-	r, err := NewUpstream([]string{conn.LocalAddr().String()})
+	r, err := NewUpstream([]string{conn.LocalAddr().String()}, obs.NewRegistry())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

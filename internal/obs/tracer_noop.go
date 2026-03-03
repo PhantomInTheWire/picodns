@@ -57,11 +57,17 @@ type TracerSnapshot struct {
 // Registry is a no-op implementation when perf build tag is not set.
 type Registry struct{}
 
+func NewRegistry() *Registry {
+	return &Registry{}
+}
+
 // GlobalRegistry is a no-op global registry.
-var GlobalRegistry = &Registry{}
+var GlobalRegistry = NewRegistry()
 
 // Register is a no-op.
 func (r *Registry) Register(t *FuncTracer) {}
+
+func (r *Registry) RegisterAll(tracers ...*FuncTracer) {}
 
 // Report is a no-op.
 func (r *Registry) Report(w io.Writer) {}

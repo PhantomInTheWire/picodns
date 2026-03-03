@@ -43,6 +43,7 @@ type Recursive struct {
 	transport       types.Transport
 	bufPool         *pool.Bytes
 	connPool        *connPool
+	registry        *obs.Registry
 	rootServers     []string
 	logger          *slog.Logger
 	nsCache         *cache.TTL[string, []string]
@@ -58,10 +59,11 @@ type Recursive struct {
 }
 
 // NewRecursive creates a new recursive DNS resolver.
-func NewRecursive(opts ...Option) *Recursive {
+func NewRecursive(registry *obs.Registry, opts ...Option) *Recursive {
 	r := &Recursive{
 		bufPool:         pool.DefaultPool,
-		connPool:        newConnPool(),
+		connPool:        newConnPool(registry),
+		registry:        registry,
 		rootServers:     defaultRootServers,
 		logger:          slog.Default(),
 		nsCache:         cache.NewTTL[string, []string](nil),
@@ -82,24 +84,26 @@ func NewRecursive(opts ...Option) *Recursive {
 	r.tracers.warmup = obs.NewFuncTracer("Recursive.Warmup", r.tracers.resolve)
 	r.tracers.warmupRTT = obs.NewFuncTracer("Recursive.warmupRTT", r.tracers.warmup)
 
-	r.rttTracker = newRTTTracker(r.tracers.resolveIterative)
+	r.rttTracker = newRTTTracker(r.tracers.resolveIterative, registry)
 
-	obs.GlobalRegistry.Register(r.tracers.resolve)
-	obs.GlobalRegistry.Register(r.tracers.resolveIterative)
-	obs.GlobalRegistry.Register(r.tracers.iterHopWait)
-	obs.GlobalRegistry.Register(r.tracers.iterParseMsg)
-	obs.GlobalRegistry.Register(r.tracers.iterMinimize)
-	obs.GlobalRegistry.Register(r.tracers.iterReferral)
-	obs.GlobalRegistry.Register(r.tracers.iterResolveNS)
-	obs.GlobalRegistry.Register(r.tracers.resolveNSNames)
-	obs.GlobalRegistry.Register(r.tracers.warmup)
-	obs.GlobalRegistry.Register(r.tracers.warmupRTT)
+	registry.RegisterAll(
+		r.tracers.resolve,
+		r.tracers.resolveIterative,
+		r.tracers.iterHopWait,
+		r.tracers.iterParseMsg,
+		r.tracers.iterMinimize,
+		r.tracers.iterReferral,
+		r.tracers.iterResolveNS,
+		r.tracers.resolveNSNames,
+		r.tracers.warmup,
+		r.tracers.warmupRTT,
+	)
 
 	for _, opt := range opts {
 		opt(r)
 	}
 	if r.transport == nil {
-		r.transport = NewTransport(r.bufPool, r.connPool, defaultTimeout)
+		r.transport = NewTransport(r.bufPool, r.connPool, defaultTimeout, registry)
 	}
 	return r
 }

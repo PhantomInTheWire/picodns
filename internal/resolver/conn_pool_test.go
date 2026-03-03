@@ -5,11 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"picodns/internal/obs"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestConnPoolGetAndRelease(t *testing.T) {
-	p := newConnPool()
+	p := newConnPool(obs.NewRegistry())
 	ctx := context.Background()
 
 	conn, release, err := p.get(ctx)
@@ -28,7 +30,7 @@ func TestConnPoolGetAndRelease(t *testing.T) {
 }
 
 func TestConnPoolBadRelease(t *testing.T) {
-	p := newConnPool()
+	p := newConnPool(obs.NewRegistry())
 	ctx := context.Background()
 
 	conn1, release1, err := p.get(ctx)
@@ -48,7 +50,7 @@ func TestConnPoolBadRelease(t *testing.T) {
 }
 
 func TestConnPoolMaxConns(t *testing.T) {
-	p := newConnPool()
+	p := newConnPool(obs.NewRegistry())
 	ctx := context.Background()
 
 	// Acquire ConnPoolMaxConns connections
@@ -75,7 +77,7 @@ func TestConnPoolMaxConns(t *testing.T) {
 }
 
 func TestConnPoolIdleExpiry(t *testing.T) {
-	p := newConnPool()
+	p := newConnPool(obs.NewRegistry())
 	ctx := context.Background()
 
 	conn1, release1, err := p.get(ctx)

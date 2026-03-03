@@ -52,7 +52,7 @@ type Cached struct {
 }
 
 // NewCached creates a Cached resolver that fronts the given upstream with a cache layer.
-func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
+func NewCached(cacheStore *cache.Cache, upstream types.Resolver, registry *obs.Registry) *Cached {
 	c := &Cached{
 		cache:    cacheStore,
 		upstream: upstream,
@@ -76,19 +76,21 @@ func NewCached(cacheStore *cache.Cache, upstream types.Resolver) *Cached {
 	c.tracers.setCache = obs.NewFuncTracer("Cached.setCache", c.tracers.resolve)
 	c.tracers.maybePrefetch = obs.NewFuncTracer("Cached.maybePrefetchKey", c.tracers.resolve)
 
-	obs.GlobalRegistry.Register(c.tracers.resolveFromCache)
-	obs.GlobalRegistry.Register(c.tracers.resolve)
-	obs.GlobalRegistry.Register(c.tracers.resolveFastPath)
-	obs.GlobalRegistry.Register(c.tracers.resolveParseReq)
-	obs.GlobalRegistry.Register(c.tracers.resolveInflight)
-	obs.GlobalRegistry.Register(c.tracers.resolveUpstream)
-	obs.GlobalRegistry.Register(c.tracers.resolveValidate)
-	obs.GlobalRegistry.Register(c.tracers.resolveCacheSet)
-	obs.GlobalRegistry.Register(c.tracers.getCachedWithKey)
-	obs.GlobalRegistry.Register(c.tracers.acquireInflight)
-	obs.GlobalRegistry.Register(c.tracers.releaseInflight)
-	obs.GlobalRegistry.Register(c.tracers.setCache)
-	obs.GlobalRegistry.Register(c.tracers.maybePrefetch)
+	registry.RegisterAll(
+		c.tracers.resolveFromCache,
+		c.tracers.resolve,
+		c.tracers.resolveFastPath,
+		c.tracers.resolveParseReq,
+		c.tracers.resolveInflight,
+		c.tracers.resolveUpstream,
+		c.tracers.resolveValidate,
+		c.tracers.resolveCacheSet,
+		c.tracers.getCachedWithKey,
+		c.tracers.acquireInflight,
+		c.tracers.releaseInflight,
+		c.tracers.setCache,
+		c.tracers.maybePrefetch,
+	)
 
 	return c
 }

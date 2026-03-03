@@ -13,6 +13,7 @@ import (
 
 	"picodns/internal/cache"
 	"picodns/internal/config"
+	"picodns/internal/obs"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
 	"picodns/internal/types"
@@ -92,7 +93,7 @@ func StartTestServer(t *testing.T, res types.Resolver, opts ...ServerOption) (st
 
 	cfg.ListenAddrs = []string{addr}
 
-	srv := server.New(cfg, logger, res)
+	srv := server.New(cfg, logger, res, obs.NewRegistry())
 	ctx, cancel := context.WithCancel(context.Background())
 	var srvWg sync.WaitGroup
 	startErr := make(chan error, 1)
@@ -139,10 +140,11 @@ func StartServerWithUpstreams(t *testing.T, upstreams []string, opts ...ServerOp
 		opt(options)
 	}
 
-	up, err := resolver.NewUpstream(upstreams)
+	registry := obs.NewRegistry()
+	up, err := resolver.NewUpstream(upstreams, registry)
 	require.NoError(t, err)
 	store := cache.New(options.cacheSize, nil)
-	res := resolver.NewCached(store, up)
+	res := resolver.NewCached(store, up, registry)
 
 	return StartTestServer(t, res, opts...)
 }

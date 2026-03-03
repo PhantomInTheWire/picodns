@@ -11,6 +11,7 @@ import (
 
 	"picodns/internal/cache"
 	"picodns/internal/config"
+	"picodns/internal/obs"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
 	"picodns/internal/types"
@@ -39,8 +40,9 @@ func main() {
 	defer cancel()
 
 	cacheStore := cache.New(cfg.CacheSize, nil)
+	perfRegistry := obs.NewRegistry()
 
-	runtime, err := buildResolver(cfg, logger, cacheStore)
+	runtime, err := buildResolver(cfg, logger, cacheStore, perfRegistry)
 	if err != nil {
 		logger.Error("failed to build resolver", "error", err)
 		os.Exit(1)
@@ -50,7 +52,7 @@ func main() {
 		go runtime.warmup(ctx)
 	}
 
-	srv := server.New(cfg, logger, runtime.resolver)
+	srv := server.New(cfg, logger, runtime.resolver, perfRegistry)
 	if runtime.configureServer != nil {
 		runtime.configureServer(srv, cfg)
 	}
@@ -66,12 +68,12 @@ func main() {
 	}
 }
 
-func buildResolver(cfg config.Config, logger *slog.Logger, cacheStore *cache.Cache) (*resolverRuntime, error) {
+func buildResolver(cfg config.Config, logger *slog.Logger, cacheStore *cache.Cache, perfRegistry *obs.Registry) (*resolverRuntime, error) {
 	if cfg.Recursive || len(cfg.Upstreams) == 0 {
 		logger.Info("using recursive resolver")
-		rec := resolver.NewRecursive()
+		rec := resolver.NewRecursive(perfRegistry)
 		rec.SetObsEnabled(cfg.Stats)
-		cached := resolver.NewCached(cacheStore, rec)
+		cached := resolver.NewCached(cacheStore, rec, perfRegistry)
 		cached.Prefetch = cfg.Prefetch
 		cached.ObsEnabled = cfg.Stats
 		return &resolverRuntime{
@@ -92,12 +94,12 @@ func buildResolver(cfg config.Config, logger *slog.Logger, cacheStore *cache.Cac
 	}
 
 	logger.Info("using upstream resolver", "upstreams", cfg.Upstreams)
-	upstream, err := resolver.NewUpstream(cfg.Upstreams)
+	upstream, err := resolver.NewUpstream(cfg.Upstreams, perfRegistry)
 	if err != nil {
 		return nil, err
 	}
 	upstream.SetObsEnabled(cfg.Stats)
-	cached := resolver.NewCached(cacheStore, upstream)
+	cached := resolver.NewCached(cacheStore, upstream, perfRegistry)
 	cached.Prefetch = cfg.Prefetch
 	cached.ObsEnabled = cfg.Stats
 	return &resolverRuntime{

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 )
 
 // mockTransport implements types.Transport for testing warmup.
@@ -40,7 +41,7 @@ func (m *mockTransport) Query(_ context.Context, server string, req []byte, time
 
 func TestWarmupRTTQueriesRootServers(t *testing.T) {
 	mt := &mockTransport{}
-	r := NewRecursive(WithTransport(mt), WithRootServers([]string{"1.1.1.1:53", "8.8.8.8:53"}))
+	r := NewRecursive(obs.NewRegistry(), WithTransport(mt), WithRootServers([]string{"1.1.1.1:53", "8.8.8.8:53"}))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -55,7 +56,7 @@ func TestWarmupRTTQueriesRootServers(t *testing.T) {
 
 func TestWarmupPopulatesDelegationCache(t *testing.T) {
 	mt := &mockTransport{}
-	r := NewRecursive(WithTransport(mt), WithRootServers([]string{"1.1.1.1:53"}))
+	r := NewRecursive(obs.NewRegistry(), WithTransport(mt), WithRootServers([]string{"1.1.1.1:53"}))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -70,7 +71,7 @@ func TestWarmupPopulatesDelegationCache(t *testing.T) {
 
 func TestWarmupRespectsContextCancellation(t *testing.T) {
 	mt := &mockTransport{}
-	r := NewRecursive(WithTransport(mt), WithRootServers([]string{"1.1.1.1:53"}))
+	r := NewRecursive(obs.NewRegistry(), WithTransport(mt), WithRootServers([]string{"1.1.1.1:53"}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately

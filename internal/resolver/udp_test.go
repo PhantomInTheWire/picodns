@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"picodns/internal/obs"
 	"picodns/internal/pool"
 )
 
@@ -32,7 +33,8 @@ func TestTransportQueryHonorsCallerTimeout(t *testing.T) {
 		}
 	}()
 
-	transport := NewTransport(pool.DefaultPool, newConnPool(), 50*time.Millisecond)
+	registry := obs.NewRegistry()
+	transport := NewTransport(pool.DefaultPool, newConnPool(registry), 50*time.Millisecond, registry)
 	got, cleanup, err := transport.Query(context.Background(), conn.LocalAddr().String(), req, 300*time.Millisecond)
 	require.NoError(t, err)
 	require.Equal(t, resp, got)

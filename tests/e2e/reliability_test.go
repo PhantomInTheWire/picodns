@@ -12,6 +12,7 @@ import (
 	"picodns/internal/cache"
 	"picodns/internal/config"
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 	"picodns/internal/resolver"
 	"picodns/internal/server"
 	"picodns/tests/testutil"
@@ -94,12 +95,13 @@ func TestE2EBackpressure(t *testing.T) {
 	cfg.ListenAddrs = []string{serverAddr}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	up, err := resolver.NewUpstream(cfg.Upstreams)
+	registry := obs.NewRegistry()
+	up, err := resolver.NewUpstream(cfg.Upstreams, registry)
 	require.NoError(t, err)
 	store := cache.New(cfg.CacheSize, nil)
-	res := resolver.NewCached(store, up)
+	res := resolver.NewCached(store, up, registry)
 
-	srv := server.New(cfg, logger, res)
+	srv := server.New(cfg, logger, res, registry)
 	go func() {
 		_ = srv.Start(ctx)
 	}()

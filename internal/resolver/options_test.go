@@ -5,11 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"picodns/internal/obs"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestWithRootServers(t *testing.T) {
-	r := NewRecursive()
+	r := NewRecursive(obs.NewRegistry())
 	servers := []string{"192.0.2.1:53", "192.0.2.2:53"}
 
 	WithRootServers(servers)(r)
@@ -18,7 +20,7 @@ func TestWithRootServers(t *testing.T) {
 }
 
 func TestWithTransport(t *testing.T) {
-	r := NewRecursive()
+	r := NewRecursive(obs.NewRegistry())
 	transport := &testTransport{}
 
 	WithTransport(transport)(r)

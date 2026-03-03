@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"picodns/internal/dns"
+	"picodns/internal/obs"
 	"picodns/internal/resolver"
 	"picodns/tests/testutil"
 	"picodns/tests/testutil/dnstest"
@@ -43,7 +44,7 @@ func TestE2ERecursiveResolution(t *testing.T) {
 
 func testRecursiveResolutionReal(t *testing.T) {
 	requireNetwork(t)
-	rec := resolver.NewRecursive()
+	rec := resolver.NewRecursive(obs.NewRegistry())
 	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -73,6 +74,7 @@ func testRecursiveResolutionMock(t *testing.T) {
 		})
 
 	rec := resolver.NewRecursive(
+		obs.NewRegistry(),
 		resolver.WithRootServers([]string{hierarchy.RootAddr()}),
 		resolver.WithTransport(transport),
 	)
@@ -139,6 +141,7 @@ func TestE2ERecursiveBailiwickProtection(t *testing.T) {
 	})
 
 	rec := resolver.NewRecursive(
+		obs.NewRegistry(),
 		resolver.WithRootServers([]string{"192.0.2.1:53"}),
 		resolver.WithTransport(transport),
 	)
@@ -163,7 +166,7 @@ func TestE2ERecursiveCNAME(t *testing.T) {
 
 func testRecursiveCNAMEReal(t *testing.T) {
 	requireNetwork(t)
-	rec := resolver.NewRecursive()
+	rec := resolver.NewRecursive(obs.NewRegistry())
 	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -194,6 +197,7 @@ func testRecursiveCNAMEMock(t *testing.T) {
 		})
 
 	rec := resolver.NewRecursive(
+		obs.NewRegistry(),
 		resolver.WithRootServers([]string{hierarchy.RootAddr()}),
 		resolver.WithTransport(transport),
 	)
@@ -226,7 +230,7 @@ func TestE2ERecursiveAAAA(t *testing.T) {
 	}
 	requireNetwork(t)
 
-	rec := resolver.NewRecursive()
+	rec := resolver.NewRecursive(obs.NewRegistry())
 	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -251,7 +255,7 @@ func TestE2ERecursiveMX(t *testing.T) {
 	}
 	requireNetwork(t)
 
-	rec := resolver.NewRecursive()
+	rec := resolver.NewRecursive(obs.NewRegistry())
 	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	defer stopServer()
 
@@ -277,7 +281,7 @@ func TestE2ERecursiveMultipleDomains(t *testing.T) {
 	}
 	requireNetwork(t)
 
-	rec := resolver.NewRecursive()
+	rec := resolver.NewRecursive(obs.NewRegistry())
 	serverAddr, stopServer := testutil.StartServerWithResolver(t, rec)
 	t.Cleanup(stopServer)
 

@@ -53,14 +53,16 @@ type Registry struct {
 	enabled bool
 }
 
-// GlobalRegistry is the global registry instance.
-var GlobalRegistry = &Registry{
-	enabled: true,
+func NewRegistry() *Registry {
+	return &Registry{enabled: true}
 }
+
+// GlobalRegistry is the global registry instance.
+var GlobalRegistry = NewRegistry()
 
 // Register adds a tracer to the registry.
 func (r *Registry) Register(t *FuncTracer) {
-	if !r.enabled {
+	if r == nil || !r.enabled || t == nil {
 		return
 	}
 	if warm := warmupSampleCalls.Load(); warm > 0 {
@@ -69,6 +71,12 @@ func (r *Registry) Register(t *FuncTracer) {
 	r.mu.Lock()
 	r.tracers = append(r.tracers, t)
 	r.mu.Unlock()
+}
+
+func (r *Registry) RegisterAll(tracers ...*FuncTracer) {
+	for _, tracer := range tracers {
+		r.Register(tracer)
+	}
 }
 
 func (r *Registry) snapshotTracers() []*FuncTracer {

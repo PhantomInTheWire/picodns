@@ -22,7 +22,7 @@ type rttTracker struct {
 	}
 }
 
-func newRTTTracker(parent *obs.FuncTracer) *rttTracker {
+func newRTTTracker(parent *obs.FuncTracer, registry *obs.Registry) *rttTracker {
 	t := &rttTracker{
 		rtts:     make(map[string]time.Duration),
 		timeouts: make(map[string]uint32),
@@ -34,10 +34,7 @@ func newRTTTracker(parent *obs.FuncTracer) *rttTracker {
 	t.tracers.get = obs.NewFuncTracer("rttTracker.Get", parent)
 	t.tracers.sortBest = obs.NewFuncTracer("rttTracker.SortBest", parent)
 
-	obs.GlobalRegistry.Register(t.tracers.update)
-	obs.GlobalRegistry.Register(t.tracers.failure)
-	obs.GlobalRegistry.Register(t.tracers.get)
-	obs.GlobalRegistry.Register(t.tracers.sortBest)
+	registry.RegisterAll(t.tracers.update, t.tracers.failure, t.tracers.get, t.tracers.sortBest)
 
 	return t
 }
