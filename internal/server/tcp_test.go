@@ -28,6 +28,20 @@ func (m *mockResolver) Resolve(_ context.Context, req []byte) ([]byte, func(), e
 	return m.resp, nil, nil
 }
 
+type blockingResolver struct {
+	started chan struct{}
+	done    chan struct{}
+	ctx     context.Context
+}
+
+func (r *blockingResolver) Resolve(ctx context.Context, _ []byte) ([]byte, func(), error) {
+	r.ctx = ctx
+	close(r.started)
+	<-ctx.Done()
+	close(r.done)
+	return nil, nil, ctx.Err()
+}
+
 func newTestServer(resolver *mockResolver) *Server {
 	cfg := config.Default()
 	cfg.Workers = 1
@@ -187,4 +201,34 @@ func TestTCPHandlerQueryCounting(t *testing.T) {
 	_ = readTCPResponse(t, client)
 
 	require.Equal(t, uint64(2), srv.TotalQueries.Load())
+}
+
+func TestTCPHandlerCancelsResolverOnContextCancel(t *testing.T) {
+	query := makeTestQuery("cancel.com")
+	resolver := &blockingResolver{
+		started: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+	cfg := config.Default()
+	cfg.Workers = 1
+	srv := New(cfg, slog.Default(), resolver)
+
+	client, server := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go srv.handleTCPConn(ctx, server)
+
+	writeTCPQuery(t, client, query)
+	<-resolver.started
+	cancel()
+
+	select {
+	case <-resolver.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("resolver was not canceled when connection context ended")
+	}
+
+	require.ErrorIs(t, resolver.ctx.Err(), context.Canceled)
+	_ = client.Close()
 }

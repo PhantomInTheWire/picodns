@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -38,55 +39,65 @@ func Default() Config {
 	}
 }
 
-// flagBindings holds the intermediate string values that bridge flag registration
-// and post-parse processing.
 type flagBindings struct {
 	listen        string
 	upstreams     string
 	statsInterval string
 }
 
-var bindings flagBindings
-
-// BindFlags registers command-line flags on the default flag set,
-// binding them to the fields of cfg. Call ParseFlags after to parse os.Args.
-func BindFlags(cfg *Config) {
-	if cfg == nil {
+func bindFlags(fs *flag.FlagSet, cfg *Config, fb *flagBindings) {
+	if fs == nil || cfg == nil || fb == nil {
 		return
 	}
 
-	flag.StringVar(&bindings.listen, "listen", strings.Join(cfg.ListenAddrs, ","), "comma-separated listen addresses")
-	flag.StringVar(&bindings.upstreams, "upstreams", strings.Join(cfg.Upstreams, ","), "comma-separated upstreams")
-	flag.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker pool size")
-	flag.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "max cache entries")
-	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level (debug, info, warn, error)")
-	flag.BoolVar(&cfg.Recursive, "recursive", cfg.Recursive, "use recursive resolution instead of forwarding to upstreams")
-	flag.BoolVar(&cfg.Prewarm, "prewarm", cfg.Prewarm, "pre-warm recursive resolver cache on startup")
-	flag.BoolVar(&cfg.Prefetch, "prefetch", cfg.Prefetch, "proactively refresh hot cache entries")
-	flag.BoolVar(&cfg.Stats, "stats", cfg.Stats, "emit one-time stats summary on shutdown")
-	flag.StringVar(&cfg.PerfReport, "perf-report", cfg.PerfReport, "write perf JSON report to this path (perf builds only)")
-	flag.StringVar(&bindings.statsInterval, "stats-interval", cfg.StatsInterval.String(), "DEPRECATED: enables -stats when >0")
+	fs.StringVar(&fb.listen, "listen", strings.Join(cfg.ListenAddrs, ","), "comma-separated listen addresses")
+	fs.StringVar(&fb.upstreams, "upstreams", strings.Join(cfg.Upstreams, ","), "comma-separated upstreams")
+	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker pool size")
+	fs.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "max cache entries")
+	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level (debug, info, warn, error)")
+	fs.BoolVar(&cfg.Recursive, "recursive", cfg.Recursive, "use recursive resolution instead of forwarding to upstreams")
+	fs.BoolVar(&cfg.Prewarm, "prewarm", cfg.Prewarm, "pre-warm recursive resolver cache on startup")
+	fs.BoolVar(&cfg.Prefetch, "prefetch", cfg.Prefetch, "proactively refresh hot cache entries")
+	fs.BoolVar(&cfg.Stats, "stats", cfg.Stats, "emit one-time stats summary on shutdown")
+	fs.StringVar(&cfg.PerfReport, "perf-report", cfg.PerfReport, "write perf JSON report to this path (perf builds only)")
+	fs.StringVar(&fb.statsInterval, "stats-interval", cfg.StatsInterval.String(), "DEPRECATED: enables -stats when >0")
 }
 
-// ParseFlags calls flag.Parse and applies post-processing to cfg.
-// Must be called after BindFlags.
-func ParseFlags(cfg *Config) {
-	flag.Parse()
-
-	if bindings.listen != "" {
-		cfg.ListenAddrs = splitComma(bindings.listen)
+func applyBindings(cfg *Config, fb flagBindings) error {
+	if cfg == nil {
+		return fmt.Errorf("nil config")
 	}
-	if bindings.upstreams != "" {
-		cfg.Upstreams = splitComma(bindings.upstreams)
+	if fb.listen != "" {
+		cfg.ListenAddrs = splitComma(fb.listen)
 	}
-	if strings.TrimSpace(bindings.statsInterval) != "" {
-		if d, err := time.ParseDuration(strings.TrimSpace(bindings.statsInterval)); err == nil {
-			cfg.StatsInterval = d
-			if d > 0 {
-				cfg.Stats = true
-			}
+	if fb.upstreams != "" {
+		cfg.Upstreams = splitComma(fb.upstreams)
+	}
+	if strings.TrimSpace(fb.statsInterval) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(fb.statsInterval))
+		if err != nil {
+			return fmt.Errorf("parse stats-interval: %w", err)
+		}
+		cfg.StatsInterval = d
+		if d > 0 {
+			cfg.Stats = true
 		}
 	}
+	return nil
+}
+
+func ParseArgs(args []string) (Config, error) {
+	cfg := Default()
+	fs := flag.NewFlagSet("picodns", flag.ContinueOnError)
+	var fb flagBindings
+	bindFlags(fs, &cfg, &fb)
+	if err := fs.Parse(args); err != nil {
+		return Config{}, err
+	}
+	if err := applyBindings(&cfg, fb); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 func splitComma(value string) []string {

@@ -1,0 +1,4543 @@
+{
+  "version": 1,
+  "created": "2026-03-03T14:14:03+00:00",
+  "last_scan": "2026-03-03T14:38:56+00:00",
+  "scan_count": 7,
+  "overall_score": 34.7,
+  "objective_score": 86.7,
+  "strict_score": 34.7,
+  "verified_strict_score": 86.7,
+  "stats": {
+    "total": 110,
+    "open": 58,
+    "fixed": 1,
+    "auto_resolved": 51,
+    "wontfix": 0,
+    "false_positive": 0,
+    "by_tier": {
+      "1": {
+        "open": 5,
+        "fixed": 1,
+        "auto_resolved": 0,
+        "wontfix": 0,
+        "false_positive": 0
+      },
+      "3": {
+        "open": 53,
+        "fixed": 0,
+        "auto_resolved": 14,
+        "wontfix": 0,
+        "false_positive": 0
+      },
+      "4": {
+        "open": 0,
+        "fixed": 0,
+        "auto_resolved": 37,
+        "wontfix": 0,
+        "false_positive": 0
+      }
+    }
+  },
+  "findings": {
+    "structural::internal/resolver/recursive.go": {
+      "id": "structural::internal/resolver/recursive.go",
+      "detector": "structural",
+      "file": "internal/resolver/recursive.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: large (771 LOC) / complexity score 76",
+      "detail": {
+        "loc": 771,
+        "complexity_score": 76,
+        "complexity_signals": [
+          "97 if/else branches",
+          "19 for loops"
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:03+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "structural::internal/resolver/cache.go": {
+      "id": "structural::internal/resolver/cache.go",
+      "detector": "structural",
+      "file": "internal/resolver/cache.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: large (547 LOC) / complexity score 54",
+      "detail": {
+        "loc": 547,
+        "complexity_score": 54,
+        "complexity_signals": [
+          "77 if/else branches",
+          "12 defer"
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:03+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "flat_dirs::internal/resolver": {
+      "id": "flat_dirs::internal/resolver",
+      "detector": "flat_dirs",
+      "file": "internal/resolver",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Directory overload: 26 files, 0 child dirs (combined 26) \u2014 consider grouping by domain",
+      "detail": {
+        "file_count": 26,
+        "child_dir_count": 0,
+        "combined_score": 26,
+        "kind": "overload",
+        "parent_sibling_count": 0,
+        "wrapper_item_count": 0,
+        "sparse_child_count": 0,
+        "sparse_child_ratio": 0.0,
+        "sparse_child_file_threshold": 0
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:03+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "vet_error::tests/testutil/transport.go::vet_error::11": {
+      "id": "vet_error::tests/testutil/transport.go::vet_error::11",
+      "detector": "vet_error",
+      "file": "tests/testutil/transport.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "open /Users/ghost/Library/Caches/go-build/8d/8d161f1feedf42cc3a15ed8e7db613b86f12f0d70fc84657da1e4b8d1d73aec4-a: operation not permitted",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:14:04+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "responsibility_cohesion::internal/resolver/utils.go::cohesion::internal/resolver/utils.go": {
+      "id": "responsibility_cohesion::internal/resolver/utils.go::cohesion::internal/resolver/utils.go",
+      "detector": "responsibility_cohesion",
+      "file": "internal/resolver/utils.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "9 disconnected function clusters (13 functions) \u2014 likely mixed responsibilities",
+      "detail": {
+        "summary": "Clusters: cacheTTLForResponse, setResponseID, extractReferral, secureRandUint16",
+        "lines": []
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:32:25+00:00",
+      "resolved_at": "2026-03-03T14:35:31+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:35:31+00:00",
+        "scan_verified": true
+      }
+    },
+    "responsibility_cohesion::internal/obs/tracer.go::cohesion::internal/obs/tracer.go": {
+      "id": "responsibility_cohesion::internal/obs/tracer.go::cohesion::internal/obs/tracer.go",
+      "detector": "responsibility_cohesion",
+      "file": "internal/obs/tracer.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "6 disconnected function clusters (17 functions) \u2014 likely mixed responsibilities",
+      "detail": {
+        "summary": "Clusters: samplingRateFromMask, TraceNested, Enabled, Register",
+        "lines": []
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:32:25+00:00",
+      "resolved_at": "2026-03-03T14:35:31+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:35:31+00:00",
+        "scan_verified": true
+      }
+    },
+    "responsibility_cohesion::internal/cache/ttl.go::cohesion::internal/cache/ttl.go": {
+      "id": "responsibility_cohesion::internal/cache/ttl.go::cohesion::internal/cache/ttl.go",
+      "detector": "responsibility_cohesion",
+      "file": "internal/cache/ttl.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "7 disconnected function clusters (20 functions) \u2014 likely mixed responsibilities",
+      "detail": {
+        "summary": "Clusters: recordHit, evictOverflowLocked, recordExpired, StatsSnapshot",
+        "lines": []
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:32:25+00:00",
+      "resolved_at": "2026-03-03T14:35:31+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:35:31+00:00",
+        "scan_verified": true
+      }
+    },
+    "responsibility_cohesion::internal/resolver/recursive.go::cohesion::internal/resolver/recursive.go": {
+      "id": "responsibility_cohesion::internal/resolver/recursive.go::cohesion::internal/resolver/recursive.go",
+      "detector": "responsibility_cohesion",
+      "file": "internal/resolver/recursive.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "5 disconnected function clusters (13 functions) \u2014 likely mixed responsibilities",
+      "detail": {
+        "summary": "Clusters: NewRecursive, DelegationCacheStatsSnapshot, TransportAddrCacheStatsSnapshot, NSCacheStatsSnapshot",
+        "lines": []
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/cache/cache_test.go::unused_import::9": {
+      "id": "unused::internal/cache/cache_test.go::unused_import::9",
+      "detector": "unused",
+      "file": "internal/cache/cache_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/cache/ttl_test.go::unused_import::7": {
+      "id": "unused::internal/cache/ttl_test.go::unused_import::7",
+      "detector": "unused",
+      "file": "internal/cache/ttl_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/config/config_test.go::unused_import::6": {
+      "id": "unused::internal/config/config_test.go::unused_import::6",
+      "detector": "unused",
+      "file": "internal/config/config_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "unused::internal/dns/message_test.go::unused_import::6": {
+      "id": "unused::internal/dns/message_test.go::unused_import::6",
+      "detector": "unused",
+      "file": "internal/dns/message_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/dns/name_test.go::unused_import::6": {
+      "id": "unused::internal/dns/name_test.go::unused_import::6",
+      "detector": "unused",
+      "file": "internal/dns/name_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/dns/response_test.go::unused_import::7": {
+      "id": "unused::internal/dns/response_test.go::unused_import::7",
+      "detector": "unused",
+      "file": "internal/dns/response_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/cache_test.go::unused_import::9": {
+      "id": "unused::internal/resolver/cache_test.go::unused_import::9",
+      "detector": "unused",
+      "file": "internal/resolver/cache_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/conn_pool_test.go::unused_import::8": {
+      "id": "unused::internal/resolver/conn_pool_test.go::unused_import::8",
+      "detector": "unused",
+      "file": "internal/resolver/conn_pool_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/delegation_cache_test.go::unused_import::7": {
+      "id": "unused::internal/resolver/delegation_cache_test.go::unused_import::7",
+      "detector": "unused",
+      "file": "internal/resolver/delegation_cache_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/recursive_test.go::unused_import::8": {
+      "id": "unused::internal/resolver/recursive_test.go::unused_import::8",
+      "detector": "unused",
+      "file": "internal/resolver/recursive_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/rtt_tracker_test.go::unused_import::9": {
+      "id": "unused::internal/resolver/rtt_tracker_test.go::unused_import::9",
+      "detector": "unused",
+      "file": "internal/resolver/rtt_tracker_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/upstream_test.go::unused_import::9": {
+      "id": "unused::internal/resolver/upstream_test.go::unused_import::9",
+      "detector": "unused",
+      "file": "internal/resolver/upstream_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/warmup_test.go::unused_import::9": {
+      "id": "unused::internal/resolver/warmup_test.go::unused_import::9",
+      "detector": "unused",
+      "file": "internal/resolver/warmup_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/server/tcp_test.go::unused_import::12": {
+      "id": "unused::internal/server/tcp_test.go::unused_import::12",
+      "detector": "unused",
+      "file": "internal/server/tcp_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::tests/e2e/dns_e2e_test.go::unused_import::8": {
+      "id": "unused::tests/e2e/dns_e2e_test.go::unused_import::8",
+      "detector": "unused",
+      "file": "tests/e2e/dns_e2e_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::tests/e2e/recursive_test.go::unused_import::10": {
+      "id": "unused::tests/e2e/recursive_test.go::unused_import::10",
+      "detector": "unused",
+      "file": "tests/e2e/recursive_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::tests/e2e/reliability_test.go::unused_import::19": {
+      "id": "unused::tests/e2e/reliability_test.go::unused_import::19",
+      "detector": "unused",
+      "file": "tests/e2e/reliability_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::tests/testutil/dnstest/dns.go::unused_import::10": {
+      "id": "unused::tests/testutil/dnstest/dns.go::unused_import::10",
+      "detector": "unused",
+      "file": "tests/testutil/dnstest/dns.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::tests/testutil/mock.go::unused_import::9": {
+      "id": "unused::tests/testutil/mock.go::unused_import::9",
+      "detector": "unused",
+      "file": "tests/testutil/mock.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::tests/testutil/server.go::unused_import::12": {
+      "id": "unused::tests/testutil/server.go::unused_import::12",
+      "detector": "unused",
+      "file": "tests/testutil/server.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "signature::internal/cache/cache.go::signature_variance::Get": {
+      "id": "signature::internal/cache/cache.go::signature_variance::Get",
+      "detector": "signature",
+      "file": "internal/cache/cache.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "'Get' has 3 different signatures across 4 files",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "signature::internal/cache/cache.go::signature_variance::Set": {
+      "id": "signature::internal/cache/cache.go::signature_variance::Set",
+      "detector": "signature",
+      "file": "internal/cache/cache.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "'Set' has 3 different signatures across 3 files",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "signature::internal/resolver/cache.go::signature_variance::Resolve": {
+      "id": "signature::internal/resolver/cache.go::signature_variance::Resolve",
+      "detector": "signature",
+      "file": "internal/resolver/cache.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "'Resolve' has 3 different signatures across 5 files",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "signature::internal/resolver/udp.go::signature_variance::Query": {
+      "id": "signature::internal/resolver/udp.go::signature_variance::Query",
+      "detector": "signature",
+      "file": "internal/resolver/udp.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "'Query' has 2 different signatures across 3 files",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/resolver/warmup.go::shallow::warmup_test.go": {
+      "id": "test_coverage::internal/resolver/warmup.go::shallow::warmup_test.go",
+      "detector": "test_coverage",
+      "file": "internal/resolver/warmup.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Shallow tests: warmup_test.go has 2 assertions across 3 test functions",
+      "detail": {
+        "kind": "shallow_tests",
+        "test_file": "internal/resolver/warmup_test.go",
+        "assertions": 2,
+        "test_functions": 3,
+        "loc_weight": 10.954451150103322
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/resolver/udp_addr.go::untested_module": {
+      "id": "test_coverage::internal/resolver/udp_addr.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/resolver/udp_addr.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (50 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 50,
+        "importer_count": 0,
+        "loc_weight": 7.0710678118654755
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "test_coverage::internal/dns/util.go::untested_module": {
+      "id": "test_coverage::internal/dns/util.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/dns/util.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (128 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 128,
+        "importer_count": 0,
+        "loc_weight": 11.313708498984761
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/resolver/udp.go::untested_module": {
+      "id": "test_coverage::internal/resolver/udp.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/resolver/udp.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (317 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 317,
+        "importer_count": 0,
+        "loc_weight": 17.804493814764857
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "test_coverage::internal/resolver/utils.go::untested_module": {
+      "id": "test_coverage::internal/resolver/utils.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/resolver/utils.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (70 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 70,
+        "importer_count": 0,
+        "loc_weight": 8.366600265340756
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/pool/bytes.go::untested_module": {
+      "id": "test_coverage::internal/pool/bytes.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/pool/bytes.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (45 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 45,
+        "importer_count": 0,
+        "loc_weight": 6.708203932499369
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "test_coverage::internal/server/udp.go::untested_module": {
+      "id": "test_coverage::internal/server/udp.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/server/udp.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (251 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 251,
+        "importer_count": 0,
+        "loc_weight": 15.84297951775486
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/server/utils.go::untested_module": {
+      "id": "test_coverage::internal/server/utils.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/server/utils.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (208 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 208,
+        "importer_count": 0,
+        "loc_weight": 14.422205101855956
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "test_coverage::internal/obs/tracer_noop.go::untested_module": {
+      "id": "test_coverage::internal/obs/tracer_noop.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/obs/tracer_noop.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (77 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 77,
+        "importer_count": 0,
+        "loc_weight": 8.774964387392123
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "test_coverage::internal/dns/hash.go::untested_module": {
+      "id": "test_coverage::internal/dns/hash.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/dns/hash.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (85 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 85,
+        "importer_count": 0,
+        "loc_weight": 9.219544457292887
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/dns/ttl.go::untested_module": {
+      "id": "test_coverage::internal/dns/ttl.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/dns/ttl.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (75 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 75,
+        "importer_count": 0,
+        "loc_weight": 8.660254037844387
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::cmd/picodns/main.go::untested_module": {
+      "id": "test_coverage::cmd/picodns/main.go::untested_module",
+      "detector": "test_coverage",
+      "file": "cmd/picodns/main.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (144 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 144,
+        "importer_count": 0,
+        "loc_weight": 12.0
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "test_coverage::internal/server/server.go::untested_module": {
+      "id": "test_coverage::internal/server/server.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/server/server.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (103 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 103,
+        "importer_count": 0,
+        "loc_weight": 10.14889156509222
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/resolver/options.go::untested_module": {
+      "id": "test_coverage::internal/resolver/options.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/resolver/options.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (22 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 22,
+        "importer_count": 0,
+        "loc_weight": 4.69041575982343
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "test_coverage::internal/obs/tracer.go::untested_module": {
+      "id": "test_coverage::internal/obs/tracer.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/obs/tracer.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (158 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 158,
+        "importer_count": 0,
+        "loc_weight": 12.569805089976535
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "subjective_review::cmd/picodns/main.go::unreviewed": {
+      "id": "subjective_review::cmd/picodns/main.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "cmd/picodns/main.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 144
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/cache/cache.go::unreviewed": {
+      "id": "subjective_review::internal/cache/cache.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/cache/cache.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 236
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/cache/ttl.go::unreviewed": {
+      "id": "subjective_review::internal/cache/ttl.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/cache/ttl.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 163
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/config/config.go::unreviewed": {
+      "id": "subjective_review::internal/config/config.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/config/config.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 103
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/dns/hash.go::unreviewed": {
+      "id": "subjective_review::internal/dns/hash.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/dns/hash.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 85
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/dns/message.go::unreviewed": {
+      "id": "subjective_review::internal/dns/message.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/dns/message.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 370
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/dns/name.go::unreviewed": {
+      "id": "subjective_review::internal/dns/name.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/dns/name.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 167
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/dns/response.go::unreviewed": {
+      "id": "subjective_review::internal/dns/response.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/dns/response.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 184
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/dns/ttl.go::unreviewed": {
+      "id": "subjective_review::internal/dns/ttl.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/dns/ttl.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 75
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/dns/util.go::unreviewed": {
+      "id": "subjective_review::internal/dns/util.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/dns/util.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 128
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/obs/tracer.go::unreviewed": {
+      "id": "subjective_review::internal/obs/tracer.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/obs/tracer.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 158
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/obs/tracer_noop.go::unreviewed": {
+      "id": "subjective_review::internal/obs/tracer_noop.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/obs/tracer_noop.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 77
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/pool/bytes.go::unreviewed": {
+      "id": "subjective_review::internal/pool/bytes.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/pool/bytes.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 45
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/cache.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/cache.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/cache.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 547
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/conn_pool.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/conn_pool.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/conn_pool.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 155
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/constants.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/constants.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/constants.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 107
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/delegation_cache.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/delegation_cache.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/delegation_cache.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 53
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/options.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/options.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/options.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 22
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/recursive.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/recursive.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/recursive.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 771
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/rtt_tracker.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/rtt_tracker.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/rtt_tracker.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 171
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/udp.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/udp.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/udp.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 317
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/udp_addr.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/udp_addr.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/udp_addr.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 50
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/upstream.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/upstream.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/upstream.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 73
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/utils.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/utils.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/utils.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 76
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/warmup.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/warmup.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/warmup.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 120
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/server/server.go::unreviewed": {
+      "id": "subjective_review::internal/server/server.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/server/server.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 103
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/server/tcp.go::unreviewed": {
+      "id": "subjective_review::internal/server/tcp.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/server/tcp.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 114
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/server/udp.go::unreviewed": {
+      "id": "subjective_review::internal/server/udp.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/server/udp.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 251
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/server/utils.go::unreviewed": {
+      "id": "subjective_review::internal/server/utils.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/server/utils.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 188
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/types/resolver.go::unreviewed": {
+      "id": "subjective_review::internal/types/resolver.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/types/resolver.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 31
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::.::holistic_unreviewed": {
+      "id": "subjective_review::.::holistic_unreviewed",
+      "detector": "subjective_review",
+      "file": ".",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No holistic codebase review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed"
+      },
+      "status": "auto_resolved",
+      "note": "resolved by holistic review import",
+      "first_seen": "2026-03-03T14:14:04+00:00",
+      "last_seen": "2026-03-03T14:35:31+00:00",
+      "resolved_at": "2026-03-03T14:35:59+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "agent_import",
+        "text": "Holistic review refreshed; coverage marker superseded",
+        "attested_at": "2026-03-03T14:35:59+00:00",
+        "scan_verified": false
+      }
+    },
+    "dupes::internal/obs/tracer.go::TraceNested::internal/obs/tracer.go::TraceSampled": {
+      "id": "dupes::internal/obs/tracer.go::TraceNested::internal/obs/tracer.go::TraceSampled",
+      "detector": "dupes",
+      "file": "internal/obs/tracer.go",
+      "tier": 3,
+      "confidence": "low",
+      "summary": "Near dupe: TraceSampled (internal/obs/tracer.go:116) <-> TraceNested (internal/obs/tracer.go:144) [93%]",
+      "detail": {
+        "fn_a": {
+          "file": "/Users/ghost/picodns/internal/obs/tracer.go",
+          "name": "TraceSampled",
+          "line": 116,
+          "loc": 22
+        },
+        "fn_b": {
+          "file": "/Users/ghost/picodns/internal/obs/tracer.go",
+          "name": "TraceNested",
+          "line": 144,
+          "loc": 24
+        },
+        "similarity": 0.93,
+        "kind": "near-duplicate",
+        "cluster_size": 2,
+        "cluster": [
+          {
+            "file": "/Users/ghost/picodns/internal/obs/tracer.go",
+            "name": "TraceSampled",
+            "line": 116,
+            "loc": 22
+          },
+          {
+            "file": "/Users/ghost/picodns/internal/obs/tracer.go",
+            "name": "TraceNested",
+            "line": 144,
+            "loc": 24
+          }
+        ]
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:15:14+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "boilerplate_duplication::internal/resolver/utils.go::aa088ad1f5785f93": {
+      "id": "boilerplate_duplication::internal/resolver/utils.go::aa088ad1f5785f93",
+      "detector": "boilerplate_duplication",
+      "file": "internal/resolver/utils.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Boilerplate block repeated across 2 files (window 15 lines): internal/resolver/utils.go:53, internal/server/utils.go:19",
+      "detail": {
+        "distinct_files": 2,
+        "window_size": 15,
+        "locations": [
+          {
+            "file": "internal/resolver/utils.go",
+            "line": 53
+          },
+          {
+            "file": "internal/server/utils.go",
+            "line": 19
+          }
+        ],
+        "sample": [
+          "(req []byte) ([]byte, bool) {",
+          "\thdr, err := dns.ReadHeader(req)",
+          "\tif err != nil || hdr.QDCount == 0 {",
+          "\t\treturn nil, false"
+        ]
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:26:35+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "boilerplate_duplication::internal/resolver/utils.go::fe1817aa49745294": {
+      "id": "boilerplate_duplication::internal/resolver/utils.go::fe1817aa49745294",
+      "detector": "boilerplate_duplication",
+      "file": "internal/resolver/utils.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Boilerplate block repeated across 2 files (window 6 lines): internal/resolver/utils.go:70, internal/server/utils.go:33",
+      "detail": {
+        "distinct_files": 2,
+        "window_size": 6,
+        "locations": [
+          {
+            "file": "internal/resolver/utils.go",
+            "line": 70
+          },
+          {
+            "file": "internal/server/utils.go",
+            "line": 33
+          }
+        ],
+        "sample": [
+          "hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & dns.RcodeMask)",
+          "\thdr.QDCount = 1",
+          "\thdr.ANCount = 0",
+          "\thdr.NSCount = 0"
+        ]
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:26:35+00:00",
+      "last_seen": "2026-03-03T14:27:52+00:00",
+      "resolved_at": "2026-03-03T14:32:25+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:32:25+00:00",
+        "scan_verified": true
+      }
+    },
+    "unused::cmd/picodns/main_test.go::unused_import::8": {
+      "id": "unused::cmd/picodns/main_test.go::unused_import::8",
+      "detector": "unused",
+      "file": "cmd/picodns/main_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/dns/hash_additional_test.go::unused_import::6": {
+      "id": "unused::internal/dns/hash_additional_test.go::unused_import::6",
+      "detector": "unused",
+      "file": "internal/dns/hash_additional_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/dns/ttl_additional_test.go::unused_import::7": {
+      "id": "unused::internal/dns/ttl_additional_test.go::unused_import::7",
+      "detector": "unused",
+      "file": "internal/dns/ttl_additional_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/dns/util_additional_test.go::unused_import::6": {
+      "id": "unused::internal/dns/util_additional_test.go::unused_import::6",
+      "detector": "unused",
+      "file": "internal/dns/util_additional_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/obs/tracer_noop_test.go::unused_import::9": {
+      "id": "unused::internal/obs/tracer_noop_test.go::unused_import::9",
+      "detector": "unused",
+      "file": "internal/obs/tracer_noop_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/pool/bytes_test.go::unused_import::6": {
+      "id": "unused::internal/pool/bytes_test.go::unused_import::6",
+      "detector": "unused",
+      "file": "internal/pool/bytes_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/options_test.go::unused_import::8": {
+      "id": "unused::internal/resolver/options_test.go::unused_import::8",
+      "detector": "unused",
+      "file": "internal/resolver/options_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/udp_addr_test.go::unused_import::7": {
+      "id": "unused::internal/resolver/udp_addr_test.go::unused_import::7",
+      "detector": "unused",
+      "file": "internal/resolver/udp_addr_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/server/utils_test.go::unused_import::6": {
+      "id": "unused::internal/server/utils_test.go::unused_import::6",
+      "detector": "unused",
+      "file": "internal/server/utils_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:32:24+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/resolver/response_utils.go::untested_module": {
+      "id": "test_coverage::internal/resolver/response_utils.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/resolver/response_utils.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (38 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 38,
+        "importer_count": 0,
+        "loc_weight": 6.164414002968976
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/obs/tracer_runtime.go::untested_module": {
+      "id": "test_coverage::internal/obs/tracer_runtime.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/obs/tracer_runtime.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (86 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 86,
+        "importer_count": 0,
+        "loc_weight": 9.273618495495704
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/cache/ttl_internal.go::untested_module": {
+      "id": "test_coverage::internal/cache/ttl_internal.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/cache/ttl_internal.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (86 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 86,
+        "importer_count": 0,
+        "loc_weight": 9.273618495495704
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/resolver/cache_ttl.go::untested_module": {
+      "id": "test_coverage::internal/resolver/cache_ttl.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/resolver/cache_ttl.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (135 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 135,
+        "importer_count": 0,
+        "loc_weight": 11.61895003862225
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/obs/tracer_report.go::untested_module": {
+      "id": "test_coverage::internal/obs/tracer_report.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/obs/tracer_report.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (172 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 172,
+        "importer_count": 0,
+        "loc_weight": 13.114877048604
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::internal/resolver/referral.go::untested_module": {
+      "id": "test_coverage::internal/resolver/referral.go::untested_module",
+      "detector": "test_coverage",
+      "file": "internal/resolver/referral.go",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (59 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 59,
+        "importer_count": 0,
+        "loc_weight": 7.681145747868608
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:38:56+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "subjective_review::internal/cache/ttl_internal.go::unreviewed": {
+      "id": "subjective_review::internal/cache/ttl_internal.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/cache/ttl_internal.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 86
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:35:29+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/obs/tracer_report.go::unreviewed": {
+      "id": "subjective_review::internal/obs/tracer_report.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/obs/tracer_report.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 172
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:35:29+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/obs/tracer_runtime.go::unreviewed": {
+      "id": "subjective_review::internal/obs/tracer_runtime.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/obs/tracer_runtime.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 86
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:35:29+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/cache_ttl.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/cache_ttl.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/cache_ttl.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 135
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:35:29+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/referral.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/referral.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/referral.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 59
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:35:29+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "subjective_review::internal/resolver/response_utils.go::unreviewed": {
+      "id": "subjective_review::internal/resolver/response_utils.go::unreviewed",
+      "detector": "subjective_review",
+      "file": "internal/resolver/response_utils.go",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 38
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-03T14:35:29+00:00",
+      "last_seen": "2026-03-03T14:35:29+00:00",
+      "resolved_at": "2026-03-03T14:38:56+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-03T14:38:56+00:00",
+        "scan_verified": true
+      }
+    },
+    "review::.::holistic::initialization_coupling::global_flag_binding_state::a8551252": {
+      "id": "review::.::holistic::initialization_coupling::global_flag_binding_state::a8551252",
+      "detector": "review",
+      "file": ".",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "Config parsing relies on package-global flag state and call ordering.",
+      "detail": {
+        "holistic": true,
+        "dimension": "initialization_coupling",
+        "related_files": [
+          "internal/config/config.go",
+          "cmd/picodns/main.go",
+          "internal/config/config_test.go"
+        ],
+        "evidence": [
+          "`internal/config/config.go` keeps parse intermediates in the package-global `bindings` struct and registers flags on the process-global default `flag` set.",
+          "`cmd/picodns/main.go` must call `BindFlags(&cfg)` before `ParseFlags(&cfg)`, so config construction is order-dependent rather than self-contained.",
+          "The tests only verify that `BindFlags` does not parse; they do not isolate or reset the default flag set, so repeated use in-process would be fragile."
+        ],
+        "suggestion": "Replace `BindFlags`/`ParseFlags` with a config-scoped parser that owns its own `flag.FlagSet` and returns a parsed `Config`. Stage it as: 1. add `Parse(fs *flag.FlagSet, args []string) (Config, error)` in `internal/config`; 2. switch `cmd/picodns/main.go` to call it directly; 3. remove the package-global `bindings`; 4. validate with `go test ./...` and a focused CLI test that parses twice in one process.",
+        "reasoning": ""
+      },
+      "status": "fixed",
+      "note": "main now parses config through config.ParseArgs using an isolated FlagSet, and config tests cover repeated independent parses.",
+      "first_seen": "2026-03-03T14:35:59+00:00",
+      "last_seen": "2026-03-03T14:35:59+00:00",
+      "resolved_at": "2026-03-03T14:39:13+00:00",
+      "reopen_count": 0,
+      "lang": "go",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "manual",
+        "text": "I have actually introduced isolated flag parsing in internal/config/config.go, switched cmd/picodns/main.go to use it, and added regression tests in internal/config/config_test.go, and I am not gaming the score by resolving without fixing.",
+        "attested_at": "2026-03-03T14:39:13+00:00",
+        "scan_verified": false
+      }
+    },
+    "review::.::holistic::initialization_coupling::constructor_side_effect_registry::891bd670": {
+      "id": "review::.::holistic::initialization_coupling::constructor_side_effect_registry::891bd670",
+      "detector": "review",
+      "file": ".",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "Resolver constructors mutate a process-wide tracer registry as a hidden side effect.",
+      "detail": {
+        "holistic": true,
+        "dimension": "initialization_coupling",
+        "related_files": [
+          "internal/obs/tracer.go",
+          "internal/resolver/recursive.go",
+          "internal/resolver/cache.go",
+          "internal/resolver/udp.go",
+          "internal/resolver/conn_pool.go",
+          "internal/resolver/rtt_tracker.go",
+          "internal/server/utils.go"
+        ],
+        "evidence": [
+          "`internal/obs/tracer.go` exposes a mutable process-global `GlobalRegistry` used for all perf reporting.",
+          "Each resolver-related constructor registers tracers immediately on creation, so allocating a resolver changes global process state before the caller opts into reporting.",
+          "`internal/server/utils.go` later emits a single report from the same global registry, which means tracer ownership is process-wide rather than tied to one server/resolver instance."
+        ],
+        "suggestion": "Introduce an explicit observability runtime object and inject it into resolver/server construction instead of registering into `obs.GlobalRegistry` from constructors. Stage it as: 1. define a registry interface in `internal/obs`; 2. thread it through `NewRecursive`, `NewCached`, `NewTransport`, `newConnPool`, and `newRTTTracker`; 3. let `cmd/picodns/main.go` create one registry only when perf reporting is requested; 4. update report generation to use that instance; 5. validate with `go test ./...` and a perf-build test that constructing two resolvers does not merge tracer state unless requested.",
+        "reasoning": ""
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:59+00:00",
+      "last_seen": "2026-03-03T14:35:59+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "review::.::holistic::api_surface_coherence::resolver_interface_leaks_concrete_ops::f8ab2b21": {
+      "id": "review::.::holistic::api_surface_coherence::resolver_interface_leaks_concrete_ops::f8ab2b21",
+      "detector": "review",
+      "file": ".",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "The resolver API hides operational capabilities behind concrete types.",
+      "detail": {
+        "holistic": true,
+        "dimension": "api_surface_coherence",
+        "related_files": [
+          "internal/types/resolver.go",
+          "cmd/picodns/main.go",
+          "internal/resolver/recursive.go",
+          "internal/resolver/upstream.go",
+          "internal/resolver/cache.go"
+        ],
+        "evidence": [
+          "`types.Resolver` exposes only `Resolve`, but `cmd/picodns/main.go` also needs `SetObsEnabled`, cache stats, NS cache stats, delegation stats, and transport addr stats.",
+          "`buildResolver` therefore returns the interface plus three concrete resolver pointers so startup and shutdown code can keep reaching around the abstraction.",
+          "The concrete-only methods are operationally important, not rare test hooks, so the API surface is incomplete for real runtime use."
+        ],
+        "suggestion": "Define an explicit runtime-facing resolver surface instead of returning parallel concrete handles. For example: add a small `types.RuntimeResolver`/`types.ResolverStats` capability interface set for observability and snapshots, implement it in `Cached`, `Recursive`, and `Upstream`, then change `buildResolver` to return one composed value. Validate with `go test ./...` after removing concrete resolver plumbing from `cmd/picodns/main.go`.",
+        "reasoning": ""
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:59+00:00",
+      "last_seen": "2026-03-03T14:35:59+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "review::.::holistic::contract_coherence::transport_timeout_contract_violation::6c8bbea0": {
+      "id": "review::.::holistic::contract_coherence::transport_timeout_contract_violation::6c8bbea0",
+      "detector": "review",
+      "file": ".",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "The UDP transport implementation silently ignores the documented caller timeout contract.",
+      "detail": {
+        "holistic": true,
+        "dimension": "contract_coherence",
+        "related_files": [
+          "internal/types/resolver.go",
+          "internal/resolver/udp.go",
+          "internal/resolver/recursive.go"
+        ],
+        "evidence": [
+          "`types.Transport.Query` documents that any `timeout > 0` is used as the exchange timeout.",
+          "`udpTransport.Query` caps caller-provided timeouts to `t.timeout`, so a larger timeout request is silently shortened.",
+          "`Recursive.queryServersParallel` computes adaptive per-hop timeouts before calling the transport, so the caller is explicitly depending on that contract."
+        ],
+        "suggestion": "Either honor the interface exactly by using the supplied timeout as-is when `timeout > 0`, or change the interface comment and all callers to document that transports may cap timeouts. The safer path is to preserve caller intent in `udpTransport.Query`, then add regression tests for shorter, equal, and longer caller-provided timeouts with `go test ./internal/resolver`.",
+        "reasoning": ""
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:59+00:00",
+      "last_seen": "2026-03-03T14:35:59+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "review::.::holistic::mid_level_elegance::tcp_connection_context_not_propagated::4e803d5e": {
+      "id": "review::.::holistic::mid_level_elegance::tcp_connection_context_not_propagated::4e803d5e",
+      "detector": "review",
+      "file": ".",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "TCP request handling builds a connection-scoped context but does not pass it across the resolver seam.",
+      "detail": {
+        "holistic": true,
+        "dimension": "mid_level_elegance",
+        "related_files": [
+          "internal/server/tcp.go",
+          "internal/server/tcp_test.go",
+          "internal/types/resolver.go"
+        ],
+        "evidence": [
+          "`internal/server/tcp.go` creates `connCtx` and a goroutine that closes the socket when that context ends, signaling an intent to scope work to the connection lifetime.",
+          "The actual resolver call still uses `s.resolver.Resolve(ctx, buf)` with the outer server context, so in-flight resolution is not canceled when the TCP client disconnects.",
+          "`internal/server/tcp_test.go` covers normal request/response flow but has no test for client disconnect during a slow resolution, which is why the seam mismatch is currently invisible."
+        ],
+        "suggestion": "Pass `connCtx` into `Resolve`, and add a TCP test with a blocking mock resolver that asserts cancellation when the client closes early. Run `go test ./internal/server` after the change to lock in the lifecycle behavior.",
+        "reasoning": ""
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:59+00:00",
+      "last_seen": "2026-03-03T14:35:59+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "review::.::holistic::test_strategy::missing_regression_tests_for_runtime_contracts::1a90cfd5": {
+      "id": "review::.::holistic::test_strategy::missing_regression_tests_for_runtime_contracts::1a90cfd5",
+      "detector": "review",
+      "file": ".",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "Tests miss the runtime seams that are currently drifting: timeout honoring, connection cancellation, and config isolation.",
+      "detail": {
+        "holistic": true,
+        "dimension": "test_strategy",
+        "related_files": [
+          "internal/server/tcp_test.go",
+          "internal/config/config_test.go",
+          "internal/resolver/options_test.go",
+          "internal/resolver/udp.go",
+          "internal/types/resolver.go"
+        ],
+        "evidence": [
+          "There is no test asserting that a caller-provided `Transport.Query` timeout is honored by `udpTransport.Query`, even though the interface documents that behavior.",
+          "`internal/server/tcp_test.go` does not simulate client disconnect while resolution is blocked, so the unused `connCtx` path is not exercised.",
+          "`internal/config/config_test.go` does not protect against repeated binding/parsing in one process, despite `config.go` using package-global bindings and the default flag set."
+        ],
+        "suggestion": "Add seam-focused regression tests in stages: 1. `internal/resolver` test for transport timeout behavior against the documented interface; 2. `internal/server` test that closing a TCP client cancels a blocking resolver via `connCtx`; 3. `internal/config` test that parsing with isolated `FlagSet`s works repeatedly in one process. Validate with `go test ./...`.",
+        "reasoning": ""
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:35:59+00:00",
+      "last_seen": "2026-03-03T14:35:59+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/config/config_test.go::unused_import::8": {
+      "id": "unused::internal/config/config_test.go::unused_import::8",
+      "detector": "unused",
+      "file": "internal/config/config_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:38:54+00:00",
+      "last_seen": "2026-03-03T14:38:54+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::internal/resolver/udp_test.go::unused_import::9": {
+      "id": "unused::internal/resolver/udp_test.go::unused_import::9",
+      "detector": "unused",
+      "file": "internal/resolver/udp_test.go",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: com/stretchr/testify/require",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-03T14:38:54+00:00",
+      "last_seen": "2026-03-03T14:38:54+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "go",
+      "zone": "test",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    }
+  },
+  "scan_coverage": {
+    "go": {
+      "status": "reduced",
+      "confidence": 0.0,
+      "detectors": {
+        "golangci_lint": {
+          "detector": "golangci_lint",
+          "status": "reduced",
+          "confidence": 0.0,
+          "summary": "golangci-lint tooling unavailable (parser_error)",
+          "impact": "Detector results may be under-reported for this scan.",
+          "remediation": "Install/fix the tool command and rerun scan.",
+          "tool": "golangci-lint",
+          "reason": "parser_error"
+        },
+        "security": {
+          "detector": "security",
+          "status": "full",
+          "confidence": 1.0,
+          "summary": "Security coverage complete for enabled detectors.",
+          "impact": "",
+          "remediation": "",
+          "tool": "",
+          "reason": ""
+        }
+      },
+      "warnings": [
+        {
+          "detector": "golangci_lint",
+          "status": "reduced",
+          "confidence": 0.0,
+          "summary": "golangci-lint tooling unavailable (parser_error)",
+          "impact": "Detector results may be under-reported for this scan.",
+          "remediation": "Install/fix the tool command and rerun scan.",
+          "tool": "golangci-lint",
+          "reason": "parser_error"
+        }
+      ],
+      "updated_at": "2026-03-03T14:38:56+00:00"
+    }
+  },
+  "score_confidence": {
+    "status": "reduced",
+    "confidence": 0.0,
+    "detectors": [
+      {
+        "detector": "golangci_lint",
+        "status": "reduced",
+        "confidence": 0.0,
+        "summary": "golangci-lint tooling unavailable (parser_error)",
+        "impact": "Detector results may be under-reported for this scan.",
+        "remediation": "Install/fix the tool command and rerun scan.",
+        "tool": "golangci-lint",
+        "reason": "parser_error"
+      }
+    ],
+    "dimensions": []
+  },
+  "subjective_integrity": {
+    "status": "disabled",
+    "target_score": null,
+    "matched_count": 0,
+    "matched_dimensions": [],
+    "reset_dimensions": []
+  },
+  "subjective_assessments": {},
+  "scan_history": [
+    {
+      "timestamp": "2026-03-03T14:15:14+00:00",
+      "lang": "go",
+      "strict_score": 32.1,
+      "verified_strict_score": 80.2,
+      "objective_score": 80.2,
+      "overall_score": 32.1,
+      "open": 79,
+      "diff_new": 79,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_findings": 79,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 1,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "File health": {
+          "score": 95.3,
+          "strict": 95.3
+        },
+        "Code quality": {
+          "score": 81.6,
+          "strict": 81.6
+        },
+        "Duplication": {
+          "score": 99.9,
+          "strict": 99.9
+        },
+        "Test health": {
+          "score": 52.8,
+          "strict": 52.8
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-03T14:26:35+00:00",
+      "lang": "go",
+      "strict_score": 32.0,
+      "verified_strict_score": 80.0,
+      "objective_score": 80.0,
+      "overall_score": 32.0,
+      "open": 81,
+      "diff_new": 2,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_findings": 80,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 1,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "File health": {
+          "score": 95.3,
+          "strict": 95.3
+        },
+        "Code quality": {
+          "score": 81.6,
+          "strict": 81.6
+        },
+        "Duplication": {
+          "score": 99.4,
+          "strict": 99.4
+        },
+        "Test health": {
+          "score": 52.8,
+          "strict": 52.8
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-03T14:27:52+00:00",
+      "lang": "go",
+      "strict_score": 32.0,
+      "verified_strict_score": 80.0,
+      "objective_score": 80.0,
+      "overall_score": 32.0,
+      "open": 81,
+      "diff_new": 0,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_findings": 80,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 1,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "File health": {
+          "score": 95.3,
+          "strict": 95.3
+        },
+        "Code quality": {
+          "score": 81.6,
+          "strict": 81.6
+        },
+        "Duplication": {
+          "score": 99.4,
+          "strict": 99.4
+        },
+        "Test health": {
+          "score": 52.8,
+          "strict": 52.8
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-03T14:32:25+00:00",
+      "lang": "go",
+      "strict_score": 34.3,
+      "verified_strict_score": 85.8,
+      "objective_score": 85.8,
+      "overall_score": 34.3,
+      "open": 81,
+      "diff_new": 9,
+      "diff_resolved": 9,
+      "ignored": 0,
+      "raw_findings": 80,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 1,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "File health": {
+          "score": 95.3,
+          "strict": 95.3
+        },
+        "Code quality": {
+          "score": 81.6,
+          "strict": 81.6
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 66.9,
+          "strict": 66.9
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-03T14:35:31+00:00",
+      "lang": "go",
+      "strict_score": 33.6,
+      "verified_strict_score": 84.1,
+      "objective_score": 84.1,
+      "overall_score": 33.6,
+      "open": 90,
+      "diff_new": 12,
+      "diff_resolved": 3,
+      "ignored": 0,
+      "raw_findings": 89,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 1,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "File health": {
+          "score": 96.1,
+          "strict": 96.1
+        },
+        "Code quality": {
+          "score": 91.2,
+          "strict": 91.2
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 60.4,
+          "strict": 60.4
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-03T14:35:59+00:00",
+      "lang": "go",
+      "strict_score": 33.6,
+      "verified_strict_score": 84.1,
+      "objective_score": 84.1,
+      "overall_score": 33.6,
+      "open": 96,
+      "diff_new": 6,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_findings": 6,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "disabled",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": null
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 1,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "File health": {
+          "score": 96.1,
+          "strict": 96.1
+        },
+        "Code quality": {
+          "score": 91.2,
+          "strict": 91.2
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 60.4,
+          "strict": 60.4
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-03T14:38:56+00:00",
+      "lang": "go",
+      "strict_score": 34.7,
+      "verified_strict_score": 86.7,
+      "objective_score": 86.7,
+      "overall_score": 34.7,
+      "open": 59,
+      "diff_new": 2,
+      "diff_resolved": 38,
+      "ignored": 0,
+      "raw_findings": 52,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 1,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "File health": {
+          "score": 96.1,
+          "strict": 96.1
+        },
+        "Code quality": {
+          "score": 91.2,
+          "strict": 91.2
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 67.2,
+          "strict": 67.2
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    }
+  ],
+  "lang_capabilities": {
+    "go": {
+      "fixers": [],
+      "typecheck_cmd": "go vet ./..."
+    }
+  },
+  "zone_distribution": {
+    "production": 36,
+    "test": 33
+  },
+  "tool_hash": "5423b5004fa3",
+  "scan_path": ".",
+  "scan_completeness": {
+    "go": "full"
+  },
+  "potentials": {
+    "go": {
+      "structural": 36,
+      "flat_dirs": 15,
+      "responsibility_cohesion": 1,
+      "unused_imports": 30,
+      "signature": 4,
+      "test_coverage": 403,
+      "security": 36,
+      "subjective_review": 36,
+      "boilerplate_duplication": 0,
+      "dupes": 341,
+      "stale_wontfix": 0
+    }
+  },
+  "codebase_metrics": {
+    "go": {
+      "total_files": 69,
+      "total_loc": 8869,
+      "total_directories": 12
+    }
+  },
+  "dimension_scores": {
+    "File health": {
+      "score": 96.1,
+      "strict_score": 96.1,
+      "verified_strict_score": 96.1,
+      "checks": 36,
+      "issues": 2,
+      "tier": 3,
+      "detectors": {
+        "structural": {
+          "potential": 36,
+          "pass_rate": 0.9611111111111111,
+          "issues": 2,
+          "weighted_failures": 1.4
+        }
+      },
+      "strict": 96.1
+    },
+    "Code quality": {
+      "score": 91.2,
+      "strict_score": 91.2,
+      "verified_strict_score": 91.2,
+      "checks": 16,
+      "issues": 2,
+      "tier": 3,
+      "detectors": {
+        "flat_dirs": {
+          "potential": 15,
+          "pass_rate": 0.9533333333333334,
+          "issues": 1,
+          "weighted_failures": 0.7
+        },
+        "responsibility_cohesion": {
+          "potential": 1,
+          "pass_rate": 0.30000000000000004,
+          "issues": 1,
+          "weighted_failures": 0.7
+        }
+      },
+      "strict": 91.2
+    },
+    "Duplication": {
+      "score": 100.0,
+      "strict_score": 100.0,
+      "verified_strict_score": 100.0,
+      "checks": 341,
+      "issues": 0,
+      "tier": 3,
+      "detectors": {
+        "dupes": {
+          "potential": 341,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        }
+      },
+      "strict": 100.0
+    },
+    "Test health": {
+      "score": 67.2,
+      "strict_score": 67.2,
+      "verified_strict_score": 67.2,
+      "checks": 439,
+      "issues": 14,
+      "tier": 4,
+      "detectors": {
+        "test_coverage": {
+          "potential": 403,
+          "pass_rate": 0.6421765299964145,
+          "issues": 14,
+          "weighted_failures": 144.20285841144496
+        },
+        "subjective_review": {
+          "potential": 36,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        }
+      },
+      "strict": 67.2
+    },
+    "Security": {
+      "score": 100.0,
+      "strict_score": 100.0,
+      "verified_strict_score": 100.0,
+      "checks": 36,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "security": {
+          "potential": 36,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        }
+      },
+      "strict": 100.0
+    },
+    "Naming quality": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "naming_quality",
+          "configured_weight": 2.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Logic clarity": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "logic_clarity",
+          "configured_weight": 6.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Type safety": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "type_safety",
+          "configured_weight": 12.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Contracts": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 1,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 1,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "contract_coherence",
+          "configured_weight": 12.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Error consistency": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "error_consistency",
+          "configured_weight": 3.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Abstraction fit": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "abstraction_fitness",
+          "configured_weight": 8.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "AI generated debt": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "ai_generated_debt",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "High elegance": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "high_level_elegance",
+          "configured_weight": 22.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Mid elegance": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 1,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 1,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "mid_level_elegance",
+          "configured_weight": 22.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Low elegance": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "low_level_elegance",
+          "configured_weight": 12.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Cross-module arch": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "cross_module_architecture",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Init coupling": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 1,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 1,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "initialization_coupling",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Convention drift": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "convention_outlier",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Dep health": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "dependency_health",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Test strategy": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 1,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 1,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "test_strategy",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "API coherence": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 1,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 1,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "api_surface_coherence",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Auth consistency": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "authorization_consistency",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Stale migration": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "incomplete_migration",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Structure nav": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "package_organization",
+          "configured_weight": 5.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    },
+    "Design coherence": {
+      "score": 0.0,
+      "strict_score": 0.0,
+      "verified_strict_score": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0,
+          "assessment_score": 0.0,
+          "placeholder": true,
+          "dimension_key": "design_coherence",
+          "configured_weight": 10.0,
+          "components": []
+        }
+      },
+      "strict": 0.0
+    }
+  },
+  "reminder_history": {
+    "zone_classification": 3,
+    "report_scores": 6,
+    "feedback_nudge": 3,
+    "stagnant_nudge": 25,
+    "review_findings_pending": 1
+  },
+  "review_cache": {
+    "files": {},
+    "holistic": {
+      "reviewed_at": "2026-03-03T14:35:59+00:00",
+      "file_count_at_review": 68,
+      "finding_count": 6
+    }
+  },
+  "assessment_import_audit": [
+    {
+      "timestamp": "2026-03-03T14:35:59+00:00",
+      "mode": "findings_only",
+      "trusted": false,
+      "reason": "missing trusted run-batches source; imported findings only",
+      "override_used": false,
+      "attested_external": false,
+      "provisional": false,
+      "provisional_count": 0,
+      "attest": "",
+      "import_file": "/tmp/desloppify-batch7-findings.json"
+    }
+  ]
+}

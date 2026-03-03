@@ -83,6 +83,55 @@ func responseFlags(reqFlags uint16, rcode uint16) uint16 {
 	return FlagQR | (reqFlags & FlagOpcode) | (reqFlags & FlagRD) | FlagRA | (rcode & RcodeMask)
 }
 
+func questionEnd(req []byte) (Header, int, bool) {
+	hdr, err := ReadHeader(req)
+	if err != nil || hdr.QDCount == 0 {
+		return Header{}, 0, false
+	}
+	nameEnd, err := SkipName(req, HeaderLen)
+	if err != nil {
+		return Header{}, 0, false
+	}
+	qEnd := nameEnd + 4 // qtype + qclass
+	if qEnd > len(req) {
+		return Header{}, 0, false
+	}
+	return hdr, qEnd, true
+}
+
+func rewriteServfailHeader(msg []byte, hdr Header) {
+	hdr.Flags = responseFlags(hdr.Flags, RcodeServer)
+	hdr.QDCount = 1
+	hdr.ANCount = 0
+	hdr.NSCount = 0
+	hdr.ARCount = 0
+	_ = WriteHeader(msg, hdr) // cannot fail: caller validated the buffer and qEnd
+}
+
+// RewriteAsServfail rewrites req in-place into a minimal SERVFAIL response.
+// The returned slice aliases req and includes the original question.
+func RewriteAsServfail(req []byte) ([]byte, bool) {
+	hdr, qEnd, ok := questionEnd(req)
+	if !ok {
+		return nil, false
+	}
+	rewriteServfailHeader(req, hdr)
+	return req[:qEnd], true
+}
+
+// BuildServfailResponse copies req into a new minimal SERVFAIL response.
+// The returned slice includes the original question.
+func BuildServfailResponse(req []byte) ([]byte, bool) {
+	hdr, qEnd, ok := questionEnd(req)
+	if !ok {
+		return nil, false
+	}
+	resp := make([]byte, qEnd)
+	copy(resp, req[:qEnd])
+	rewriteServfailHeader(resp, hdr)
+	return resp, true
+}
+
 // MinimizeResponse strips authority/additional sections to reduce size.
 // If keepAuthorities is true, authority records are preserved and additionals dropped.
 // The response is modified in place and returned as a sliced buffer.

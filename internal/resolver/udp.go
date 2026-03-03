@@ -104,11 +104,6 @@ func (t *udpTransport) Query(ctx context.Context, server string, req []byte, tim
 
 	if timeout <= 0 {
 		timeout = timeoutFromContextOrDefault(ctx, t.timeout)
-	} else if t.timeout > 0 && timeout > t.timeout {
-		// Cap caller-provided timeouts to transport default.
-		// This prevents recursive resolution from tying up workers for seconds
-		// when RTT is unknown or inflated.
-		timeout = t.timeout
 	}
 	if timeout <= 0 {
 		if err := ctx.Err(); err != nil {

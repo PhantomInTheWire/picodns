@@ -209,7 +209,7 @@ func (s *Server) worker(ctx context.Context) {
 			}
 			// Best-effort SERVFAIL so clients don't time out.
 			if job.writer != nil {
-				if sf, ok := servfailFromRequestInPlace((*job.dataPtr)[:job.n]); ok {
+				if sf, ok := dns.RewriteAsServfail((*job.dataPtr)[:job.n]); ok {
 					select {
 					case job.writer.slowCh <- udpWrite{resp: sf, addr: job.addr, cleanup: nil, bufPtr: job.dataPtr}:
 						continue

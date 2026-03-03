@@ -338,7 +338,7 @@ func (c *Cached) Resolve(ctx context.Context, req []byte) ([]byte, func(), error
 			cleanupResp()
 			cleanupResp = nil
 		}
-		if sf, ok := servfailFromRequest(req); ok {
+		if sf, ok := dns.BuildServfailResponse(req); ok {
 			call.err = nil
 			if sf != nil {
 				sfCopy := make([]byte, len(sf))

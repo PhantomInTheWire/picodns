@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -18,15 +19,23 @@ func TestDefaultConfig(t *testing.T) {
 	require.False(t, cfg.Stats)
 }
 
-func TestBindFlagsDoesNotParse(t *testing.T) {
-	// BindFlags should only register flags, not call flag.Parse()
-	// We can verify this by checking that calling BindFlags alone
-	// doesn't panic or modify the config from defaults.
-	cfg := Default()
-	BindFlags(&cfg)
-	// Config should still have defaults since Parse wasn't called
-	require.Equal(t, []string{":53"}, cfg.ListenAddrs)
-	require.Equal(t, 128, cfg.Workers)
+func TestParseArgsUsesIsolatedFlagSet(t *testing.T) {
+	first, err := ParseArgs([]string{"-listen", ":5300", "-upstreams", "8.8.8.8:53,1.1.1.1:53", "-stats-interval", "5s"})
+	require.NoError(t, err)
+	require.Equal(t, []string{":5300"}, first.ListenAddrs)
+	require.Equal(t, []string{"8.8.8.8:53", "1.1.1.1:53"}, first.Upstreams)
+	require.True(t, first.Stats)
+	require.Equal(t, 5*time.Second, first.StatsInterval)
+
+	second, err := ParseArgs([]string{"-listen", ":5400"})
+	require.NoError(t, err)
+	require.Equal(t, []string{":5400"}, second.ListenAddrs)
+	require.Equal(t, Default().Upstreams, second.Upstreams)
+}
+
+func TestParseArgsRejectsInvalidStatsInterval(t *testing.T) {
+	_, err := ParseArgs([]string{"-stats-interval", "not-a-duration"})
+	require.Error(t, err)
 }
 
 func TestSplitComma(t *testing.T) {

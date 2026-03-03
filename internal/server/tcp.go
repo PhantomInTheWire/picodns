@@ -44,7 +44,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 
 		s.TotalQueries.Add(1)
 
-		resp, cleanup, err := s.resolver.Resolve(ctx, buf)
+		resp, cleanup, err := s.resolver.Resolve(connCtx, buf)
 		if err != nil {
 			s.HandlerErrors.Add(1)
 			s.logger.Error("handler error", "error", err)
@@ -52,7 +52,7 @@ func (s *Server) handleTCPConn(ctx context.Context, conn net.Conn) {
 				cleanup()
 			}
 			// Best-effort SERVFAIL response.
-			if sf, ok := servfailFromRequestInPlace(buf); ok {
+			if sf, ok := dns.RewriteAsServfail(buf); ok {
 				if s.logServfail {
 					s.maybeLogServfail(sf, conn.RemoteAddr())
 				}

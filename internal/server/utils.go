@@ -9,36 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"picodns/internal/dns"
 	"picodns/internal/obs"
 	"picodns/internal/types"
 )
-
-// servfailFromRequestInPlace rewrites req in-place into a minimal SERVFAIL response.
-// The returned slice references req.
-func servfailFromRequestInPlace(req []byte) ([]byte, bool) {
-	hdr, err := dns.ReadHeader(req)
-	if err != nil || hdr.QDCount == 0 {
-		return nil, false
-	}
-	nameEnd, err := dns.SkipName(req, dns.HeaderLen)
-	if err != nil {
-		return nil, false
-	}
-	qEnd := nameEnd + 4 // qtype + qclass
-	if qEnd > len(req) {
-		return nil, false
-	}
-
-	hdr.Flags = dns.FlagQR | (hdr.Flags & dns.FlagOpcode) | (hdr.Flags & dns.FlagRD) | dns.FlagRA | (dns.RcodeServer & dns.RcodeMask)
-	hdr.QDCount = 1
-	hdr.ANCount = 0
-	hdr.NSCount = 0
-	hdr.ARCount = 0
-	_ = dns.WriteHeader(req, hdr) // cannot fail: buffer validated above
-
-	return req[:qEnd], true
-}
 
 func (s *Server) startWorkers(ctx context.Context, wg *sync.WaitGroup) {
 	for i := 0; i < s.cfg.Workers; i++ {

@@ -53,40 +53,21 @@ func NewTTL[K comparable, V any](clock func() time.Time) *TTL[K, V] {
 // Get retrieves a value from the cache.
 // Returns the value and true if found and not expired.
 func (c *TTL[K, V]) Get(key K) (V, bool) {
-	if c.ObsEnabled {
-		c.gets.Add(1)
-	}
-	c.mu.RLock()
-	entry, ok := c.items[key]
-	c.mu.RUnlock()
+	c.recordGet()
+	entry, ok := c.load(key)
 
 	if !ok {
-		if c.ObsEnabled {
-			c.misses.Add(1)
-		}
-		var zero V
-		return zero, false
+		c.recordMiss()
+		return c.zeroValue(), false
 	}
 
-	if !entry.expires.IsZero() && c.clock().After(entry.expires) {
-		c.mu.Lock()
-		// Double-check after acquiring write lock
-		if entry2, ok2 := c.items[key]; ok2 && !entry2.expires.IsZero() && c.clock().After(entry2.expires) {
-			delete(c.items, key)
-			if c.ObsEnabled {
-				c.expired.Add(1)
-			}
-		}
-		c.mu.Unlock()
-		if c.ObsEnabled {
-			c.misses.Add(1)
-		}
-		var zero V
-		return zero, false
+	if !entry.expires.IsZero() && c.now().After(entry.expires) {
+		c.expireIfStale(key)
+		c.recordMiss()
+		return c.zeroValue(), false
 	}
-	if c.ObsEnabled {
-		c.hits.Add(1)
-	}
+
+	c.recordHit()
 
 	return entry.value, true
 }
@@ -97,33 +78,20 @@ func (c *TTL[K, V]) Set(key K, value V, ttl time.Duration) {
 	if ttl <= 0 {
 		return
 	}
-	if c.ObsEnabled {
-		c.sets.Add(1)
-	}
+	c.recordSet()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.items[key] = ttlEntry[V]{
+	c.storeLocked(key, ttlEntry[V]{
 		value:   value,
-		expires: c.clock().Add(ttl),
-	}
-	if c.MaxLen > 0 && len(c.items) > c.MaxLen {
-		for k := range c.items {
-			if k == key {
-				continue
-			}
-			delete(c.items, k)
-			break
-		}
-	}
+		expires: c.now().Add(ttl),
+	})
 }
 
 // Delete removes a key from the cache.
 func (c *TTL[K, V]) Delete(key K) {
-	if c.ObsEnabled {
-		c.deletes.Add(1)
-	}
+	c.recordDelete()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.items, key)
@@ -170,46 +138,26 @@ func NewPermanentCache[K comparable, V any]() *PermanentCache[K, V] {
 
 // Get retrieves a value (ignores expiration since there is none).
 func (c *PermanentCache[K, V]) Get(key K) (V, bool) {
-	if c.ObsEnabled {
-		c.gets.Add(1)
-	}
-	c.mu.RLock()
-	entry, ok := c.items[key]
-	c.mu.RUnlock()
+	c.recordGet()
+	entry, ok := c.load(key)
 
 	if !ok {
-		if c.ObsEnabled {
-			c.misses.Add(1)
-		}
-		var zero V
-		return zero, false
+		c.recordMiss()
+		return c.zeroValue(), false
 	}
-	if c.ObsEnabled {
-		c.hits.Add(1)
-	}
+	c.recordHit()
 
 	return entry.value, true
 }
 
 // Set stores a value permanently (no expiration).
 func (c *PermanentCache[K, V]) Set(key K, value V) {
-	if c.ObsEnabled {
-		c.sets.Add(1)
-	}
+	c.recordSet()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.items[key] = ttlEntry[V]{
+	c.storeLocked(key, ttlEntry[V]{
 		value:   value,
 		expires: time.Time{}, // Zero time = never expires
-	}
-	if c.MaxLen > 0 && len(c.items) > c.MaxLen {
-		for k := range c.items {
-			if k == key {
-				continue
-			}
-			delete(c.items, k)
-			break
-		}
-	}
+	})
 }
