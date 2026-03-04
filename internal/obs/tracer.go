@@ -3,6 +3,7 @@
 package obs
 
 import (
+	"sync/atomic"
 	"time"
 )
 
